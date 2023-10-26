@@ -22,6 +22,36 @@ class Preprocessing_stock_data:
         self.volume = self.df["volume"]
         self.periods = periods if periods else [23,115,460]
 
+
+    def support_resistance_line(self, support_columns: str = 'high', resistance_columns: str = 'low',
+                                timeperiods_start: int = 100, timeperiods_finish: int = 250, timeperiods_step: int = 50):
+        """
+        Calculate support and resistance lines for the given data.
+
+        Args:
+            support_columns (str, optional): Name of the column for calculating support. Defaults to 'high'.
+            resistance_columns (str, optional): Name of the column for calculating resistance. Defaults to 'low'.
+            timeperiods_start (int, optional): Starting value for the time period. Defaults to 100.
+            timeperiods_finish (int, optional): Ending value for the time period. Defaults to 250.
+            timeperiods_step (int, optional): Step size for the time period. Defaults to 50.
+
+        Returns:
+            pd.DataFrame: DataFrame with support and resistance lines for different time periods.
+
+        This function calculates support and resistance lines for the given data based on the specified time periods and columns.
+        """
+
+
+        support = tl.MIN(self.df[support_columns], timeperiod=100)
+        resistance = tl.MAX(self.df[resistance_columns], timeperiod=100)
+
+        for timeperiod in range(timeperiods_start, timeperiods_finish, timeperiods_step):
+            self.df.loc[:, f'support_{timeperiod}'] = tl.MIN(self.df[support_columns], timeperiod=timeperiod)
+            self.df.loc[:, f'resistance_{timeperiod}'] = tl.MAX(self.df[resistance_columns], timeperiod=timeperiod)
+
+        return self.df
+    
+
     def add_indicators_pattern_recognition_functions(self):
         """
         Adds pattern recognition indicators to the dataframe.
