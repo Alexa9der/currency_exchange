@@ -220,9 +220,3 @@ pip-selfcheck.json
 
 .config.json
 
-# Folder docker
-.docker/
-
-
-
-
