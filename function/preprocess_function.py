@@ -384,6 +384,46 @@ def rebound_analysis(data):
 
     return data
 
+def breakdown_analysis(data):
+    """
+    Przeprowadza analizę przełamania cen względem poziomów oporu i wsparcia.
+
+    Funkcja określa, czy występuje przełamanie ceny względem poziomów oporu i wsparcia na podstawie danych wejściowych.
+    Ustawia sygnały "buy" i "sell" w kolumnie "Signal" na podstawie wykrytych przełamań.
+
+    Argumenty:
+    data (pd.DataFrame): Dane wejściowe zawierające kolumny "RollingMax" i "RollingMin" oraz ceny otwarcia, zamknięcia, najwyższe i najniższe.
+
+    Zwraca:
+    pd.DataFrame: Dane wejściowe z dodanymi sygnałami "buy" i "sell" oraz kolumną "Signal" określającą rodzaj sygnału.
+
+    Przykład użycia:
+    >>> data = pd.DataFrame({'RollingMax': [50, 55, 60, 58, 52], 'RollingMin': [45, 40, 35, 38, 43], 'High': [52, 55, 58, 56, 51], 'Low': [48, 42, 36, 39, 45], 'Close': [50, 45, 40, 42, 48]})
+    >>> analyzed_data = breakdown_analysis(data)
+    >>> print(analyzed_data)
+    """
+    data['Buy'] = (
+        (data["RollingMax"] < data["High"]) &  # maslo masliane
+        (data["RollingMax"] < data["Close"])
+    ).map({True: 1, False: 0})
+    
+    data['SELL'] = (
+        (data["RollingMin"] > data["Low"]) &  # maslo masliane
+        (data["RollingMin"] > data["Close"])
+    ).map({True: 2, False: 0})
+    
+    data["Signal"] = data['Buy'] + data['SELL']
+    data.loc[data["Signal"] == 1, "Signal"] = "buy"
+    data.loc[data["Signal"] == 2, "Signal"] = "sell"
+
+    data["Signal"] = data["Signal"].replace(0, np.nan).ffill()
+    data = data.drop(["SELL", "Buy"], axis=1)
+
+    data.dropna(axis=0, inplace=True)
+    data.reset_index(drop=True, inplace=True)
+
+    return data
+
 def calculate_score(data, return_count = False):
     """
     Oblicza wynik na podstawie danych sygnałów kupna i sprzedaży.
