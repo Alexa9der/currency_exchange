@@ -1,6 +1,7 @@
 import requests
 import pandas as pd
 import numpy as np
+from tqdm import tqdm_notebook as t 
 import yfinance as yf
 from datetime import datetime
 import talib as tl
@@ -20,3 +21,4 @@ import ipywidgets as widgets
 from ipywidgets import interact, interact_manual
 
 
+import warnings

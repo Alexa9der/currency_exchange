@@ -299,6 +299,180 @@ class Preprocessing_stock_data:
                 
         return self.df
 
-if __name__ == "__main__":
-    preprocessor = Preprocessing_stock_data(data)
-    all_data = preprocessor.all_methods()
+# Etap I. Określanie kierunku.
+# 1. Wyznaczam cenę max i min dla różnych przedziałów od 1 do 60 dni wstecz.
+# 2. Określam czy cena w bieżącym dniu przekroczyła wyznaczony poziom min lub max.
+# 3. Określam czy cena w bieżącym dniu powróciła do określonego przedziału między min a max.
+# 4. Wyznaczam bieżący kieru5.ek:
+# - po przekroczeniu i powrocie do poziomu min ("wsparcie") kierunek to BUY;
+# - po przekroczeniu i powrocie do poziomu max ("opór") kierunek to SELL;
+# 5. Po zakończeniu sesji powtarzam punk
+# 8. Sprawdzam w którym kierunku następnego dnia był większy ruch. W górę to cena max - otwarcie. W dół to cena otwarcie - min. ty 1-4 d
+
+def define_level(data: pd.DataFrame, window_size: list = 14, bias: int = 1) -> pd.DataFrame:
+    """
+    Dodaje wartości maksimum i minimum przesuwające się do ramki danych na podstawie określonych parametrów.
+
+    Argumenty:
+    data (pd.DataFrame): Ramka danych wejściowych.
+    window_size (list): Rozmiar okna używany do obliczania wartości maksimum i minimum. Domyślnie ustawiony na 14.
+    bias (int): Wartość przesunięcia dla obliczeń. Domyślnie ustawiony na 1.
+
+    Zwraca:
+    pd.DataFrame: Zaktualizowana ramka danych zawierająca wartości maksimum i minimum.
+    """
+    data = data.copy()  
+    
+    # Obliczenie wartości maksimum i minimum za pomocą przesuwającego się okna
+    data.loc[:, f'RollingMax'] = data['High'].rolling(window=window_size).max().shift(bias)
+    data.loc[:, f'RollingMin'] = data['Low'].rolling(window=window_size).min().shift(bias)
+
+    # Usunięcie wierszy zawierających wartości NaN
+    data.dropna(axis=0, inplace=True)
+    
+    # Zresetowanie indeksu ramki danych
+    data.reset_index(drop=True, inplace=True)
+    
+    return data
+
+def rebound_analysis(data):
+    """
+    Przeprowadza analizę odbić cen od poziomów wsparcia i oporu w ramce danych.
+
+    Argumenty:
+    data (pd.DataFrame): Ramka danych wejściowych.
+
+    Zwraca:
+    pd.DataFrame: Zaktualizowana ramka danych zawierająca analizę odbić.
+    """
+    # Analiza odbić cen od poziomów oporu
+    data['SELL'] = (
+        (data["RollingMax"] < data["High"]) &
+        (data["RollingMax"] > data["Close"])
+    ).map({True: 1, False: 0})
+    
+    # resistance_indices = data[data['SELL'] == True].index + 1
+    # data.loc[resistance_indices, 'Next_Resistance_Candle_Type'] = (
+    #     data.loc[resistance_indices, 'Open'] - data.loc[resistance_indices, 'Low']
+    # )
+
+    # Analiza odbić cen od poziomów wsparcia
+    data['Buy'] = (
+        (data["RollingMin"] > data["Low"]) &
+        (data["RollingMin"] < data["Close"])
+    ).map({True: 2, False: 0})
+    
+    # support_indices = data[data['Buy'] == True].index + 1
+    # data.loc[support_indices, 'Next_Support_Candle_Type'] = (
+    #     data.loc[support_indices, 'High'] - data.loc[support_indices, 'Open']
+    # )
+
+    # Tworzenie sygnału na podstawie wykrytych odbić
+    data["Signal"] = data['Buy'] + data['SELL']
+    data.loc[data["Signal"] == 1, "Signal"] = "sell"
+    data.loc[data["Signal"] == 2, "Signal"] = "buy"
+
+    # Uzupełnianie pustych wartości sygnału zgodnie z poprzednimi wartościami
+    data["Signal"] = data["Signal"].replace(0, np.nan).ffill()
+    data = data.drop(["SELL","Buy"], axis=1)
+
+    # Usunięcie wierszy zawierających wartości NaN
+    data.dropna(axis=0, inplace=True)
+    
+    # Zresetowanie indeksu ramki danych
+    data.reset_index(drop=True, inplace=True)
+
+    return data
+
+def calculate_score(data, return_count = False):
+    """
+    Oblicza wynik na podstawie danych sygnałów kupna i sprzedaży.
+
+    Funkcja oblicza liczbę sygnałów kupna i sprzedaży z danych wejściowych, 
+    a następnie oblicza procent wartości powyżej mediany dla obu zestawów danych.
+
+    Argumenty:
+    data (pd.DataFrame): Dane wejściowe, które zawierają kolumnę "Signal" określającą sygnały kupna i sprzedaży.
+    return_count (bool): Określa, czy zwrócić również liczbę sygnałów kupna i sprzedaży.
+
+    Zwraca:
+    float or tuple: Procent wartości powyżej mediany dla obu zestawów danych sygnałów lub krotkę zawierającą liczby sygnałów kupna i sprzedaży, w zależności od wartości parametru return_count.
+
+    Przykład użycia:
+    >>> data = pd.DataFrame({'Signal': ['buy', 'sell', 'buy', 'sell', 'buy', 'buy', 'sell', 'sell']})
+    >>> score = calculate_score(data)
+    >>> print(score)
+    37.5
+    """
+    df = data.copy()
+
+    sell_count = 0
+    buy_count = 0
+    sell_counts = np.array([])
+    buy_counts = np.array([])
+    
+    for signal in df['Signal']:
+        if signal == 'sell':
+            sell_count += 1
+            if buy_count > 0:
+                buy_counts = np.append(buy_counts, buy_count)
+                buy_count = 0
+        elif signal == 'buy':
+            buy_count += 1
+            if sell_count > 0:
+                sell_counts = np.append(sell_counts, sell_count)
+                sell_count = 0
+    
+    if sell_count > 0:
+        sell_counts = np.append(sell_counts, sell_count)
+    if buy_count > 0:
+        buy_counts = np.append(buy_counts, buy_count)
+    
+    # Obliczenie procentu powyżej mediany dla sprzedaży i kupna
+    percentage_above_median_sell = len(sell_counts[sell_counts > np.median(sell_counts)]) / len(sell_counts) * 100
+    percentage_above_median_buy = len(buy_counts[buy_counts > np.median(buy_counts)]) / len(buy_counts) * 100
+    percentage = (percentage_above_median_sell + percentage_above_median_buy) / 2
+
+    if return_count:
+        return sell_counts, buy_counts
+    
+    return percentage
+
+def optimize_parameters(data, analysis, windows_size, bias = [1]):
+    """
+    Optymalizuje parametry modelu na podstawie wyników analizy.
+
+    Funkcja iteruje po zestawach parametrów określonych przez wielkość okna i przesunięcie (bias), 
+    wywołuje funkcje define_level, rebound_analysis oraz calculate_score, aby obliczyć wyniki dla każdego zestawu parametrów 
+    i zwraca zestaw parametrów, który osiąga najwyższy wynik.
+
+    Argumenty:
+    data (pd.DataFrame): Ramka danych wejściowych.
+    windows_size (list): Lista zawierająca różne wartości dla wielkości okna.
+    bias (list): Lista zawierająca różne wartości dla przesunięcia (bias).
+
+    Zwraca:
+    dict: Zestaw parametrów, który osiąga najwyższy wynik.
+
+    Przykład użycia:
+    >>> data = pd.DataFrame({'Close': [1, 2, 3, 4, 5], 'High': [2, 3, 4, 5, 6], 'Low': [0, 1, 2, 3, 4]})
+    >>> windows_size = [5, 10, 15]
+    >>> bias = [1, 2]
+    >>> best_params = optimize_parameters(data, windows_size, bias)
+    >>> print(best_params)
+    {'window_size': 10, 'bias': 2}
+    """
+    best_score = 0
+    best_params = None
+
+    for window_size in t(windows_size):
+        for b in bias:
+            current_data = define_level(data, window_size, b)
+            rebound_data = analysis(current_data)
+            current_score = calculate_score(rebound_data)  
+
+            if current_score > best_score:
+                best_score = current_score
+                best_params = {'window_size': window_size, 'bias': b}
+
+    return best_params
