@@ -424,58 +424,76 @@ def breakdown_analysis(data):
 
     return data
 
-def calculate_score(data, return_count = False):
+def calculate_score(data, return_count=False):
     """
-    Oblicza wynik na podstawie danych sygnałów kupna i sprzedaży.
+    Calculates the score based on the provided data, which includes buy and sell signals.
 
-    Funkcja oblicza liczbę sygnałów kupna i sprzedaży z danych wejściowych, 
-    a następnie oblicza procent wartości powyżej mediany dla obu zestawów danych.
+    Args:
+    data (pd.DataFrame): Input data containing columns such as 'Signal', 'PriceChange', 'Close', and 'Open'.
+    return_count (bool): Indicates whether to return the percentage of buy and sell price changes separately.
 
-    Argumenty:
-    data (pd.DataFrame): Dane wejściowe, które zawierają kolumnę "Signal" określającą sygnały kupna i sprzedaży.
-    return_count (bool): Określa, czy zwrócić również liczbę sygnałów kupna i sprzedaży.
+    Returns:
+    float or tuple: The calculated percentage score. If return_count is True, it returns a tuple containing the percentage of buy and sell price changes.
 
-    Zwraca:
-    float or tuple: Procent wartości powyżej mediany dla obu zestawów danych sygnałów lub krotkę zawierającą liczby sygnałów kupna i sprzedaży, w zależności od wartości parametru return_count.
-
-    Przykład użycia:
-    >>> data = pd.DataFrame({'Signal': ['buy', 'sell', 'buy', 'sell', 'buy', 'buy', 'sell', 'sell']})
-    >>> score = calculate_score(data)
-    >>> print(score)
+    Example:
+    >>> import pandas as pd
+    >>> data = pd.DataFrame({'Signal': ['sell', 'buy', 'buy', 'sell'], 'PriceChange': [0.1, 0.2, -0.1, -0.2], 'Close': [10, 11, 12, 13], 'Open': [9, 10, 11, 12]})
+    >>> calculate_score(data)
     37.5
     """
+
     df = data.copy()
 
     sell_count = 0
     buy_count = 0
     sell_counts = np.array([])
     buy_counts = np.array([])
-    
-    for signal in df['Signal']:
-        if signal == 'sell':
-            sell_count += 1
-            if buy_count > 0:
-                buy_counts = np.append(buy_counts, buy_count)
-                buy_count = 0
-        elif signal == 'buy':
-            buy_count += 1
-            if sell_count > 0:
-                sell_counts = np.append(sell_counts, sell_count)
-                sell_count = 0
-    
+    sell_price_changes = np.array([])
+    buy_price_changes = np.array([])
+    oll_sell_price_changes = np.array([])
+    oll_buy_price_changes = np.array([])
+
+    for i in range(len(df)):
+        # Checking the conditions to determine buy and sell signals
+        if df['Signal'].iloc[i] == 'sell':
+            oll_sell_price_changes = np.append(oll_sell_price_changes, df["PriceChange"].iloc[i])
+            if df['Close'].iloc[i] < df['Open'].iloc[i]:
+                sell_price_changes = np.append(sell_price_changes, df["PriceChange"].iloc[i])
+                sell_count += 1
+                if buy_count > 0:
+                    buy_counts = np.append(buy_counts, buy_count)
+                    buy_price_changes = np.append(buy_price_changes, df["PriceChange"].iloc[i])
+                    oll_buy_price_changes = np.append(oll_buy_price_changes, df["PriceChange"].iloc[i])
+                    buy_count = 0
+        elif df['Signal'].iloc[i] == 'buy':
+            oll_buy_price_changes = np.append(oll_buy_price_changes, df["PriceChange"].iloc[i])
+            if df['Close'].iloc[i] > df['Open'].iloc[i]:
+                buy_price_changes = np.append(buy_price_changes, df["PriceChange"].iloc[i])
+                buy_count += 1
+                if sell_count > 0:
+                    sell_counts = np.append(sell_counts, sell_count)
+                    sell_price_changes = np.append(sell_price_changes, df["PriceChange"].iloc[i])
+                    oll_sell_price_changes = np.append(oll_sell_price_changes, df["PriceChange"].iloc[i])
+                    sell_count = 0
+
+    # Handling the remaining values
     if sell_count > 0:
         sell_counts = np.append(sell_counts, sell_count)
+        sell_price_changes = np.append(sell_price_changes, df["PriceChange"].iloc[i])
+        oll_sell_price_changes = np.append(oll_sell_price_changes, df["PriceChange"].iloc[i])
+        
     if buy_count > 0:
         buy_counts = np.append(buy_counts, buy_count)
-    
-    # Obliczenie procentu powyżej mediany dla sprzedaży i kupna
-    percentage_above_median_sell = len(sell_counts[sell_counts > np.median(sell_counts)]) / len(sell_counts) * 100
-    percentage_above_median_buy = len(buy_counts[buy_counts > np.median(buy_counts)]) / len(buy_counts) * 100
-    percentage = (percentage_above_median_sell + percentage_above_median_buy) / 2
+        buy_price_changes = np.append(buy_price_changes, df["PriceChange"].iloc[i])
+        oll_buy_price_changes = np.append(oll_buy_price_changes, df["PriceChange"].iloc[i])
+
+    percentage_buy = (buy_price_changes.sum() / oll_buy_price_changes.sum()) * 100
+    percentage_sell = (sell_price_changes.sum() / oll_sell_price_changes.sum()) * 100
+    percentage = (percentage_sell + percentage_buy) / 2
 
     if return_count:
-        return sell_counts, buy_counts
-    
+        return percentage_buy, percentage_sell
+
     return percentage
 
 def optimize_parameters(data, analysis, windows_size, bias = [1]):
