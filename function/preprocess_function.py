@@ -335,6 +335,46 @@ def define_level(data: pd.DataFrame, window_size: list = 14, bias: int = 1) -> p
     
     return data
 
+def breakdown_analysis(data):
+    """
+    Przeprowadza analizę przełamania cen względem poziomów oporu i wsparcia.
+
+    Funkcja określa, czy występuje przełamanie ceny względem poziomów oporu i wsparcia na podstawie danych wejściowych.
+    Ustawia sygnały "buy" i "sell" w kolumnie "Signal" na podstawie wykrytych przełamań.
+
+    Argumenty:
+    data (pd.DataFrame): Dane wejściowe zawierające kolumny "RollingMax" i "RollingMin" oraz ceny otwarcia, zamknięcia, najwyższe i najniższe.
+
+    Zwraca:
+    pd.DataFrame: Dane wejściowe z dodanymi sygnałami "buy" i "sell" oraz kolumną "Signal" określającą rodzaj sygnału.
+
+    Przykład użycia:
+    >>> data = pd.DataFrame({'RollingMax': [50, 55, 60, 58, 52], 'RollingMin': [45, 40, 35, 38, 43], 'High': [52, 55, 58, 56, 51], 'Low': [48, 42, 36, 39, 45], 'Close': [50, 45, 40, 42, 48]})
+    >>> analyzed_data = breakdown_analysis(data)
+    >>> print(analyzed_data)
+    """
+    data['Buy'] = (
+        (data["RollingMax"] < data["High"]) &  # maslo masliane
+        (data["RollingMax"] < data["Close"])
+    ).map({True: 1, False: 0})
+    
+    data['SELL'] = (
+        (data["RollingMin"] > data["Low"]) &  # maslo masliane
+        (data["RollingMin"] > data["Close"])
+    ).map({True: 2, False: 0})
+    
+    data["Signal"] = data['Buy'] + data['SELL']
+    data.loc[data["Signal"] == 1, "Signal"] = "buy"
+    data.loc[data["Signal"] == 2, "Signal"] = "sell"
+
+    data["Signal"] = data["Signal"].replace(0, np.nan).ffill()
+    data = data.drop(["SELL", "Buy"], axis=1)
+
+    data.dropna(axis=0, inplace=True)
+    data.reset_index(drop=True, inplace=True)
+
+    return data
+
 def rebound_analysis(data):
     """
     Przeprowadza analizę odbić cen od poziomów wsparcia i oporu w ramce danych.
@@ -384,47 +424,8 @@ def rebound_analysis(data):
 
     return data
 
-def breakdown_analysis(data):
-    """
-    Przeprowadza analizę przełamania cen względem poziomów oporu i wsparcia.
-
-    Funkcja określa, czy występuje przełamanie ceny względem poziomów oporu i wsparcia na podstawie danych wejściowych.
-    Ustawia sygnały "buy" i "sell" w kolumnie "Signal" na podstawie wykrytych przełamań.
-
-    Argumenty:
-    data (pd.DataFrame): Dane wejściowe zawierające kolumny "RollingMax" i "RollingMin" oraz ceny otwarcia, zamknięcia, najwyższe i najniższe.
-
-    Zwraca:
-    pd.DataFrame: Dane wejściowe z dodanymi sygnałami "buy" i "sell" oraz kolumną "Signal" określającą rodzaj sygnału.
-
-    Przykład użycia:
-    >>> data = pd.DataFrame({'RollingMax': [50, 55, 60, 58, 52], 'RollingMin': [45, 40, 35, 38, 43], 'High': [52, 55, 58, 56, 51], 'Low': [48, 42, 36, 39, 45], 'Close': [50, 45, 40, 42, 48]})
-    >>> analyzed_data = breakdown_analysis(data)
-    >>> print(analyzed_data)
-    """
-    data['Buy'] = (
-        (data["RollingMax"] < data["High"]) &  # maslo masliane
-        (data["RollingMax"] < data["Close"])
-    ).map({True: 1, False: 0})
-    
-    data['SELL'] = (
-        (data["RollingMin"] > data["Low"]) &  # maslo masliane
-        (data["RollingMin"] > data["Close"])
-    ).map({True: 2, False: 0})
-    
-    data["Signal"] = data['Buy'] + data['SELL']
-    data.loc[data["Signal"] == 1, "Signal"] = "buy"
-    data.loc[data["Signal"] == 2, "Signal"] = "sell"
-
-    data["Signal"] = data["Signal"].replace(0, np.nan).ffill()
-    data = data.drop(["SELL", "Buy"], axis=1)
-
-    data.dropna(axis=0, inplace=True)
-    data.reset_index(drop=True, inplace=True)
-
-    return data
-
-def calculate_score(data, return_count=False):
+# calc
+def calculate_percentage(data, return_count=False):
     """
     Calculates the score based on the provided data, which includes buy and sell signals.
 
@@ -446,22 +447,18 @@ def calculate_score(data, return_count=False):
 
     sell_count = 0
     buy_count = 0
-    sell_counts = np.array([])
-    buy_counts = np.array([])
     sell_price_changes = np.array([])
     buy_price_changes = np.array([])
     oll_sell_price_changes = np.array([])
     oll_buy_price_changes = np.array([])
 
     for i in range(len(df)):
-        # Checking the conditions to determine buy and sell signals
         if df['Signal'].iloc[i] == 'sell':
             oll_sell_price_changes = np.append(oll_sell_price_changes, df["PriceChange"].iloc[i])
             if df['Close'].iloc[i] < df['Open'].iloc[i]:
                 sell_price_changes = np.append(sell_price_changes, df["PriceChange"].iloc[i])
                 sell_count += 1
                 if buy_count > 0:
-                    buy_counts = np.append(buy_counts, buy_count)
                     buy_price_changes = np.append(buy_price_changes, df["PriceChange"].iloc[i])
                     oll_buy_price_changes = np.append(oll_buy_price_changes, df["PriceChange"].iloc[i])
                     buy_count = 0
@@ -471,19 +468,15 @@ def calculate_score(data, return_count=False):
                 buy_price_changes = np.append(buy_price_changes, df["PriceChange"].iloc[i])
                 buy_count += 1
                 if sell_count > 0:
-                    sell_counts = np.append(sell_counts, sell_count)
                     sell_price_changes = np.append(sell_price_changes, df["PriceChange"].iloc[i])
                     oll_sell_price_changes = np.append(oll_sell_price_changes, df["PriceChange"].iloc[i])
                     sell_count = 0
 
-    # Handling the remaining values
     if sell_count > 0:
-        sell_counts = np.append(sell_counts, sell_count)
         sell_price_changes = np.append(sell_price_changes, df["PriceChange"].iloc[i])
         oll_sell_price_changes = np.append(oll_sell_price_changes, df["PriceChange"].iloc[i])
         
     if buy_count > 0:
-        buy_counts = np.append(buy_counts, buy_count)
         buy_price_changes = np.append(buy_price_changes, df["PriceChange"].iloc[i])
         oll_buy_price_changes = np.append(oll_buy_price_changes, df["PriceChange"].iloc[i])
 
@@ -496,29 +489,80 @@ def calculate_score(data, return_count=False):
 
     return percentage
 
-def optimize_parameters(data, analysis, windows_size, bias = [1]):
+def calculate_accumulated_price_changes(data, princ=False):    
     """
-    Optymalizuje parametry modelu na podstawie wyników analizy.
+    Calculates the accumulated price changes based on buy and sell signals in the given data.
 
-    Funkcja iteruje po zestawach parametrów określonych przez wielkość okna i przesunięcie (bias), 
-    wywołuje funkcje define_level, rebound_analysis oraz calculate_score, aby obliczyć wyniki dla każdego zestawu parametrów 
-    i zwraca zestaw parametrów, który osiąga najwyższy wynik.
+    Args:
+        data (pd.DataFrame): The input DataFrame.
+        princ (bool, optional): A boolean value indicating whether to return separate accumulated changes for buy and sell. Defaults to False.
 
-    Argumenty:
-    data (pd.DataFrame): Ramka danych wejściowych.
-    windows_size (list): Lista zawierająca różne wartości dla wielkości okna.
-    bias (list): Lista zawierająca różne wartości dla przesunięcia (bias).
+    Returns:
+        float or tuple: The accumulated price changes. If princ is True, the function returns separate changes for buy and sell.
 
-    Zwraca:
-    dict: Zestaw parametrów, który osiąga najwyższy wynik.
+    This function calculates the accumulated price changes based on buy and sell signals in the provided DataFrame.
+    It returns the total accumulated changes. If princ is True, the function returns separate changes for buy and sell.
+    """
+    df = data.copy()
+    
+    signal_changes = df['Signal'].ne(df['Signal'].shift())
+    
+    indices = df.index[signal_changes].tolist()
+    
+    df['AccumulatedPriceChange'] = 0.0
+    accumulated_change = 0.0
+    
+    for i in range(0, len(indices) - 1):
+        if df.loc[indices[i], 'Signal'] == 'sell' and df.loc[indices[i + 1], 'Signal'] == 'buy':
+            start_sell_index = indices[i]
+            end_buy_index = indices[i + 1]
+    
+            start_sell_price = df.loc[start_sell_index, 'Open']
+            end_buy_price = df.loc[end_buy_index, 'Open']
+    
+            price_change_sell_to_buy = end_buy_price - start_sell_price
+    
+            accumulated_change += price_change_sell_to_buy
+            df.loc[indices[i + 1], 'AccumulatedPriceChange'] = accumulated_change
+    
+        elif df.loc[indices[i], 'Signal'] == 'buy' and df.loc[indices[i + 1], 'Signal'] == 'sell':
+            start_buy_index = indices[i]
+            end_sell_index = indices[i + 1]
+    
+            start_buy_price = df.loc[start_buy_index, 'Open']
+            end_sell_price = df.loc[end_sell_index, 'Open']
+    
+            price_change_buy_to_sell = end_sell_price - start_buy_price
+    
+            accumulated_change += price_change_buy_to_sell
+            df.loc[indices[i + 1], 'AccumulatedPriceChange'] = accumulated_change
+    
+    df["AccumulatedPriceChange"] = df["AccumulatedPriceChange"].shift(-1).fillna(0)
+    all_sell = df.loc[df["Signal"] == "sell", "AccumulatedPriceChange"].sum()
+    all_buy = df.loc[df["Signal"] == "buy", "AccumulatedPriceChange"].sum()
 
-    Przykład użycia:
-    >>> data = pd.DataFrame({'Close': [1, 2, 3, 4, 5], 'High': [2, 3, 4, 5, 6], 'Low': [0, 1, 2, 3, 4]})
-    >>> windows_size = [5, 10, 15]
-    >>> bias = [1, 2]
-    >>> best_params = optimize_parameters(data, windows_size, bias)
-    >>> print(best_params)
-    {'window_size': 10, 'bias': 2}
+    if princ:
+        return all_sell, all_buy
+    else:
+        return all_sell + all_buy
+
+# optimizer
+def optimize_parameters(data, analysis, calculate, windows_size, bias = [1]):
+    """
+    Optimizes the parameters of a given analysis by testing different window sizes and bias values.
+
+    Args:
+        data (pd.DataFrame): The input DataFrame.
+        analysis (function): The analysis function to be optimized.
+        calculate (function): The function to calculate the score.
+        windows_size (list): List of window sizes to be tested.
+        bias (list, optional): List of bias values to be tested. Defaults to [1].
+
+    Returns:
+        dict: The best parameters found during optimization.
+
+    This function iterates through the provided window sizes and bias values, applies the analysis and calculates 
+    the score for each combination. It then returns the parameters that yield the best score.
     """
     best_score = 0
     best_params = None
@@ -527,10 +571,24 @@ def optimize_parameters(data, analysis, windows_size, bias = [1]):
         for b in bias:
             current_data = define_level(data, window_size, b)
             rebound_data = analysis(current_data)
-            current_score = calculate_score(rebound_data)  
+            current_score = calculate(rebound_data)  
 
             if current_score > best_score:
                 best_score = current_score
                 best_params = {'window_size': window_size, 'bias': b}
 
     return best_params
+
+
+
+
+
+
+
+
+
+
+
+
+
+
