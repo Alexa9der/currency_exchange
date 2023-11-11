@@ -321,7 +321,14 @@ def define_level(data: pd.DataFrame, window_size: list = 14, bias: int = 1) -> p
     Zwraca:
     pd.DataFrame: Zaktualizowana ramka danych zawierająca wartości maksimum i minimum.
     """
-    data = data.copy()  
+    data = data.copy()
+    
+    if not isinstance(window_size, int) or not isinstance(bias, int) or window_size <= 0 or bias < 0:
+        window_size = ceil(abs(window_size))
+        bias = ceil(abs(bias))
+        
+        # raise ValueError("window_size должно быть целым положительным числом, а bias - целым неотрицательным числом.")
+
     
     # Obliczenie wartości maksimum i minimum za pomocą przesuwającego się okna
     data.loc[:, f'RollingMax'] = data['High'].rolling(window=window_size).max().shift(bias)
@@ -489,7 +496,8 @@ def calculate_percentage(data, return_count=False):
 
     return percentage
 
-def calculate_accumulated_price_changes(data, princ=False):    
+
+def calculate_accumulated_price_changes(df, princ=False):    
     """
     Calculates the accumulated price changes based on buy and sell signals in the given data.
 
@@ -503,24 +511,24 @@ def calculate_accumulated_price_changes(data, princ=False):
     This function calculates the accumulated price changes based on buy and sell signals in the provided DataFrame.
     It returns the total accumulated changes. If princ is True, the function returns separate changes for buy and sell.
     """
-    df = data.copy()
     
     signal_changes = df['Signal'].ne(df['Signal'].shift())
     
     indices = df.index[signal_changes].tolist()
     
     df['AccumulatedPriceChange'] = 0.0
-    accumulated_change = 0.0
+    
     
     for i in range(0, len(indices) - 1):
+        accumulated_change = 0.0
         if df.loc[indices[i], 'Signal'] == 'sell' and df.loc[indices[i + 1], 'Signal'] == 'buy':
             start_sell_index = indices[i]
             end_buy_index = indices[i + 1]
     
-            start_sell_price = df.loc[start_sell_index, 'Open']
-            end_buy_price = df.loc[end_buy_index, 'Open']
+            start_sell_price = df.loc[start_sell_index, 'Close']
+            end_buy_price = df.loc[end_buy_index, 'Close']
     
-            price_change_sell_to_buy = end_buy_price - start_sell_price
+            price_change_sell_to_buy = start_sell_price - end_buy_price
     
             accumulated_change += price_change_sell_to_buy
             df.loc[indices[i + 1], 'AccumulatedPriceChange'] = accumulated_change
@@ -529,8 +537,8 @@ def calculate_accumulated_price_changes(data, princ=False):
             start_buy_index = indices[i]
             end_sell_index = indices[i + 1]
     
-            start_buy_price = df.loc[start_buy_index, 'Open']
-            end_sell_price = df.loc[end_sell_index, 'Open']
+            start_buy_price = df.loc[start_buy_index, 'Close']
+            end_sell_price = df.loc[end_sell_index, 'Close']
     
             price_change_buy_to_sell = end_sell_price - start_buy_price
     
@@ -542,9 +550,10 @@ def calculate_accumulated_price_changes(data, princ=False):
     all_buy = df.loc[df["Signal"] == "buy", "AccumulatedPriceChange"].sum()
 
     if princ:
-        return all_sell, all_buy
+        return all_buy, all_sell
     else:
-        return all_sell + all_buy
+        return all_buy + all_sell
+
 
 # optimizer
 def optimize_parameters(data, analysis, calculate, windows_size, bias = [1]):
@@ -579,6 +588,178 @@ def optimize_parameters(data, analysis, calculate, windows_size, bias = [1]):
 
     return best_params
 
+
+class GeneticAlgorithm:
+    """
+    A class representing a Genetic Algorithm for parameter optimization in trading strategies.
+
+    Attributes:
+        data (pd.DataFrame): The financial data used for analysis.
+        analysis (callable): The analysis function to process the data.
+        calculate (callable): The scoring function to evaluate the performance of parameter combinations.
+        window_sizes (list): Possible values for the window size parameter.
+        biases (list): Possible values for the bias parameter.
+        best_individual (list): The best parameter combination found by the genetic algorithm.
+
+    Methods:
+        init_individual(individual_class): Initializes an individual for the genetic algorithm.
+        evaluate(individual): Evaluates the fitness of an individual based on the provided scoring function.
+        mutate(individual): Performs mutation on an individual to introduce diversity in the population.
+        calculate_parameters(params): Calculates the score for a given set of parameters.
+        run_genetic_algorithm(population_size, offspring_size, cx_probability, mut_probability, n_generations):
+            Runs the genetic algorithm to find the best parameter combination.
+        get_best_individual(): Returns the best parameter combination found by the genetic algorithm.
+    """
+    
+    def __init__(self, data, analysis, calculate, window_sizes, biases=[1]):
+        """Initializes the GeneticAlgorithm instance.
+
+        Args:
+            data (pd.DataFrame): The financial data used for analysis.
+            analysis (callable): The analysis function to process the data.
+            calculate (callable): The scoring function to evaluate the performance of parameter combinations.
+            window_sizes (list): Possible values for the window size parameter.
+            biases (list, optional): Possible values for the bias parameter. Defaults to [1].
+        """
+        # Initialize the GeneticAlgorithm instance with the provided parameters
+        # Attribute Initialization:
+        self.data = data
+        self.analysis = analysis
+        self.calculate = calculate
+        self.window_sizes = window_sizes
+        self.biases = biases
+        self.best_individual = None
+
+        # Problem Definition
+        # Define the problem as a maximization problem
+        creator.create("FitnessMax", base.Fitness, weights=(1.0,))
+        creator.create("Individual", list, fitness=creator.FitnessMax)
+
+        # Toolbox Initialization
+        # Create a toolbox with the necessary components
+        self.toolbox = base.Toolbox()
+
+        # Registering Functions in the Toolbox
+        # Register an initialization method for individuals
+        self.toolbox.register("individual", self.init_individual, creator.Individual)
+        
+        # Register a method to initialize a population of individuals
+        self.toolbox.register("population", tools.initRepeat, list, self.toolbox.individual)
+        
+        # Register the evaluation method for individuals
+        self.toolbox.register("evaluate", self.evaluate)
+        
+        # Register the crossover method using Blend Crossover with a specified alpha value
+        self.toolbox.register("mate", tools.cxBlend, alpha=0.5)
+        
+        # Register the mutation method
+        self.toolbox.register("mutate", self.mutate)
+        
+        # Register the selection method using Tournament Selection with a tournament size of 3
+        self.toolbox.register("select", tools.selTournament, tournsize=3)
+
+    
+    def init_individual(self, individual_class):
+        """
+        Initializes an individual for the genetic algorithm.
+
+        Args:
+            individual_class: The class representing an individual in the genetic algorithm.
+
+        Returns:
+            list: The initialized individual.
+        """
+        
+        return individual_class([random.choice(self.window_sizes), random.choice(self.biases)])
+
+    
+    def evaluate(self, individual):
+        """
+        Evaluates the fitness of an individual based on the provided scoring function.
+
+        Args:
+            individual (list): The individual representing a parameter combination.
+
+        Returns:
+            tuple: The fitness score of the individual.
+        """
+        
+        window_size, bias = map(int, individual)
+        params = {'window_size': window_size, 'bias': bias}
+        score = self.calculate_parameters(params)
+        return (score,)
+
+    
+    def mutate(self, individual):
+        """
+        Performs mutation on an individual to introduce diversity in the population.
+
+        Args:
+            individual (list): The individual to be mutated.
+
+        Returns:
+            tuple: The mutated individual.
+        """
+        
+        if random.random() < 0.5:
+            individual[0] = int(abs(individual[0] + random.randint(-5, 5)))
+        else:
+            individual[1] = random.choice(self.biases)
+        return individual,
+
+    
+    def calculate_parameters(self, params):
+        """
+        Calculates the score for a given set of parameters.
+
+        Args:
+            params (dict): The parameter values.
+
+        Returns:
+            float: The calculated score.
+        """
+        
+        current_data = define_level(self.data, params['window_size'], params['bias'])
+        rebound_data = self.analysis(current_data)
+        return self.calculate(rebound_data)
+
+        
+    def run_genetic_algorithm(self, population_size=10, offspring_size=50, cx_probability=0.7, mut_probability=0.2, n_generations=10):
+        """
+        Runs the genetic algorithm to find the best parameter combination.
+
+        Args:
+            population_size (int, optional): The size of the initial population. Defaults to 10.
+            offspring_size (int, optional): The size of the offspring population. Defaults to 50.
+            cx_probability (float, optional): The crossover probability. Defaults to 0.7.
+            mut_probability (float, optional): The mutation probability. Defaults to 0.2.
+            n_generations (int, optional): The number of generations. Defaults to 10.
+
+        Returns:
+            list: The best parameter combination found by the genetic algorithm.
+        """
+        # Create an initial population
+        population = self.toolbox.population(n=population_size)
+
+        # Run the genetic algorithm
+        algorithms.eaMuPlusLambda(population, self.toolbox, mu=population_size, lambda_=offspring_size,
+                                  cxpb=cx_probability, mutpb=mut_probability, ngen=n_generations, stats=None, halloffame=None)
+
+        # Get the best individual
+        self.best_individual = tools.selBest(population, k=1)[0]
+        print("Best Parameters:", self.best_individual)
+
+        return self.best_individual
+
+    
+    def get_best_individual(self):
+        """
+        Returns the best parameter combination found by the genetic algorithm.
+
+        Returns:
+            list: The best parameter combination.
+        """
+        return self.best_individual
 
 
 

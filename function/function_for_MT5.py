@@ -33,6 +33,7 @@ def connect_to_mt5():
         mt5.shutdown()
         return False
 
+
 def get_historical_data(timeframe=mt5.TIMEFRAME_D1, symbol="GER30", start='2012-01-01'):
     """
     Pobiera historyczne dane z MetaTrader 5.
@@ -75,6 +76,90 @@ def get_historical_data(timeframe=mt5.TIMEFRAME_D1, symbol="GER30", start='2012-
         return None
 
 
+def automated_trading_from_signals(df, symbol="GER30", lot: float=0.01, deviation=10):
+    """
+    Executes automated trading operations based on buy and sell signals in the provided DataFrame.
+
+    Args:
+        df (pd.DataFrame): The DataFrame containing buy and sell signals.
+        symbol (str, optional): The trading symbol. Defaults to "GER30".
+        lot (float, optional): The trading lot size. Defaults to 0.01.
+        deviation (int, optional): The deviation parameter for order execution. Defaults to 10.
+
+    This function executes automated trading operations based on buy and sell signals in the provided DataFrame.
+    It opens a new position according to the latest signal and closes the previous deal if any.
+
+    Note:
+    - The function assumes that there is a connection to MetaTrader 5 established before calling it.
+    - It utilizes the `connect_to_mt5` function to establish the connection.
+    """
+
+    def order(signal, symbol, lot, deviation):
+        # Define the order parameters based on the given signal
+        price = mt5.symbol_info_tick(symbol).ask if signal == "buy" else mt5.symbol_info_tick(symbol).bid
+        trade_type = mt5.ORDER_TYPE_BUY if signal == "buy" else mt5.ORDER_TYPE_SELL
+        request = {
+            "action": mt5.TRADE_ACTION_DEAL,
+            "symbol": symbol,
+            "volume": float(lot),
+            "type": trade_type,
+            "price": price,
+            "deviation": deviation,
+            "magic": 234000,
+            "comment": f"python script open {signal}",
+            "type_time": mt5.ORDER_TIME_DAY,
+            "type_filling": mt5.ORDER_FILLING_FOK,
+        }
+        return request
+
+    def close_previous_deal(symbol, signal):
+        # Close any existing position opposite to the current signal
+        positions = mt5.positions_get(symbol)
+        if positions:
+            if signal == "buy":
+                for position in positions:
+                    if position.type == mt5.ORDER_TYPE_SELL:
+                        result = mt5.position_close(position.ticket)
+            if signal == "sell":
+                for position in positions:
+                    if position.type == mt5.ORDER_TYPE_BUY:
+                        result = mt5.position_close(position.ticket)
+
+    try:
+        # Establish a connection to MetaTrader 5
+        connect_to_mt5()
+        # Get the latest signal from the DataFrame
+        signal = df["Signal"].iloc[-1]
+        # Close the previous deal if any
+        close_previous_deal(symbol=symbol, signal=signal)
+        # Get the current market price based on the signal
+        price = mt5.symbol_info_tick(symbol).ask if signal == "buy" else mt5.symbol_info_tick(symbol).bid
+        # Create an order request based on the signal and other parameters
+        request = order(signal=signal, symbol=symbol, lot=lot, deviation=deviation)
+        # Send the order request to execute the trade
+        result = mt5.order_send(request)
+
+        # Check the result of the order execution
+        if result is not None:
+            if result.retcode != mt5.TRADE_RETCODE_DONE:
+                # Print an error message if the order execution fails
+                print("2. order_send failed, retcode={}".format(result.retcode))
+                result_dict = result._asdict()
+                for field in result_dict.keys():
+                    if field == "request":
+                        traderequest_dict = result_dict[field]._asdict()
+                        for tradereq_filed in traderequest_dict:
+                            print("       traderequest: {}={}".format(tradereq_filed, traderequest_dict[tradereq_filed]))
+        else:
+            print("Order send failed. Result is None.")
+
+    except Exception as e:
+        # Handle any exceptions that may occur during the trading process
+        print(f"Exception: {e}")
+
+    finally:
+        # Shut down the MetaTrader 5 connection
+        mt5.shutdown()
 
 
 
