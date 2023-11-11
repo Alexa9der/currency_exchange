@@ -34,44 +34,48 @@ def connect_to_mt5():
         return False
 
 
-def get_historical_data(timeframe=mt5.TIMEFRAME_D1, symbol="GER30", start='2012-01-01'):
+def get_historical_data(timeframe=mt5.TIMEFRAME_D1, symbol="GER30", count=30_000):
     """
-    Pobiera historyczne dane z MetaTrader 5.
+     Retrieves historical data from MetaTrader 5.
 
-    Argumenty:
-    timeframe (int): Interwał czasowy dla danych historycznych.
-    symbol (str): Symbol, dla którego mają zostać pobrane dane historyczne.
-    start (str): Data rozpoczęcia pobierania danych historycznych.
+     Arguments:
+     timeframe (int): Time frame for historical data.
+     symbol (str): The symbol for which you want to get historical data.
+     count (int): Number of candles requested.
 
-    Zwraca:
-    pd.DataFrame: DataFrame zawierający pobrane dane historyczne.
-    """
+     Returns:
+     pd.DataFrame: DataFrame containing the received historical data.
+     """
     if not connect_to_mt5():
+        print("Error connecting to MetaTrader 5.")
         return None
 
-    start_time = pd.Timestamp(start)  # Ustaw datę rozpoczęcia pobierania danych historycznych
+    try:
+        rates = mt5.copy_rates_from_pos(symbol, timeframe, 0, count)
+    except Exception as e:
+        print(f"Error while receiving data: {e}")
+        mt5.shutdown()
+        return None
 
-    count = 22734  # Ustaw liczbę świec, które chcesz pobrać
-    rates = mt5.copy_rates_from(symbol, timeframe, start_time, count)
-
-    # Sprawdź, czy pobieranie danych jest udane
+    # Check the success of receiving data
     if rates is not None:
-        # Konwertuje dane do DataFrame pandas
+        # Convert data to pandas DataFrame
         rates_frame = pd.DataFrame(rates)
         rates_frame['time'] = pd.to_datetime(rates_frame['time'], unit='s')
         rates_frame = rates_frame.rename(columns=lambda x: x.capitalize())
-        rates_frame = rates_frame.rename(columns={ "Time" : "Date" })
-        
+        rates_frame = rates_frame.rename(columns={"Time": "Date"})
+
         rates_frame['Volume'] = rates_frame['High'] - rates_frame['Low']
-        rates_frame['MaxPositivePriceChange'] =  rates_frame['High'] -  rates_frame['Open'] 
+        rates_frame['MaxPositivePriceChange'] = rates_frame['High'] - rates_frame['Open']
         rates_frame['MaxNegativePriceChange'] = rates_frame['Open'] - rates_frame['Low']
-        
+
         rates_frame['PriceChange'] = abs(rates_frame['Close'] - rates_frame['Close'].shift(1))
-        # Zamknięcie połączenia z MetaTrader 5
-        mt5.shutdown()
+
+        # Close the connection to MetaTrader 5
+        # mt5.shutdown()
         return rates_frame
     else:
-        print("Błąd pobierania danych.")
+        print("Error while receiving data.")
         mt5.shutdown()
         return None
 
