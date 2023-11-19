@@ -6,10 +6,10 @@ import yfinance as yf
 from datetime import datetime
 from math import ceil
 import random
-import talib as tl
-
-import MetaTrader5 as mt5
 import json
+
+import talib as tl
+import MetaTrader5 as mt5
 
 import matplotlib.pyplot as plt 
 import seaborn as sns
@@ -19,6 +19,12 @@ from plotly.offline import init_notebook_mode
 import ipywidgets as widgets
 from ipywidgets import interact, interact_manual
 
+import warnings
+
 from deap import base, creator, tools, algorithms
 
-import warnings
+from tensorflow.keras.models import Model, clone_model
+from tensorflow.keras.layers import Input, LSTM, Flatten, Dense
+import tensorflow as tf
+from sklearn.model_selection import train_test_split
+from sklearn.metrics import mean_squared_error
