@@ -6,7 +6,7 @@ import yfinance as yf
 from datetime import datetime
 from math import ceil
 import random
-# import talib as tl
+import talib as tl
 
 import MetaTrader5 as mt5
 import json
