@@ -1,7 +1,7 @@
 import requests
 import pandas as pd
 import numpy as np
-from tqdm import tqdm_notebook as t 
+from tqdm import tqdm_notebook as tqdm 
 import yfinance as yf
 from datetime import datetime
 from math import ceil
@@ -23,8 +23,9 @@ import warnings
 
 from deap import base, creator, tools, algorithms
 
-from tensorflow.keras.models import Model, clone_model
-from tensorflow.keras.layers import Input, LSTM, Flatten, Dense
 import tensorflow as tf
+from tensorflow.keras.models import Model, clone_model
+from tensorflow.keras.layers import Input, LSTM, Flatten, Dense, Attention
+
 from sklearn.model_selection import train_test_split
 from sklearn.metrics import mean_squared_error
