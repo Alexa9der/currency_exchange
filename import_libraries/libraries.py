@@ -27,5 +27,6 @@ import tensorflow as tf
 from tensorflow.keras.models import Model, clone_model
 from tensorflow.keras.layers import Input, LSTM, Flatten, Dense, Attention
 
+from sklearn.preprocessing import MinMaxScaler
 from sklearn.model_selection import train_test_split
 from sklearn.metrics import mean_squared_error

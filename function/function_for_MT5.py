@@ -19,22 +19,48 @@ def connect_to_mt5():
 
     # Inicjalizacja połączenia z MetaTrader 5
     if not mt5.initialize():
-        print("Błąd inicjalizacji ()")
+        print("Initialization error")
         mt5.shutdown()
         return None
 
     authorized = mt5.login(account, password=password, server=server)
 
     if authorized:
-        print(f"Połączono z kontem")
+        print(f"Connected to your account: {account}")
         return True
     else:
-        print("Nie udało się połączyć. Kod błędu:", mt5.last_error())
+        print("Failed to connect. Error code:", mt5.last_error())
         mt5.shutdown()
         return False
 
 
-def get_historical_data(timeframe=mt5.TIMEFRAME_D1, symbol="GER30", count=30_000):
+def get_all_symbols():
+    """
+     Gets a list of all available symbols in MetaTrader 5.
+
+     Returns:
+     list: List of characters.
+     """
+    # It is assumed that connect_to_mt5 is a function that connects to MetaTrader 5
+    if not connect_to_mt5():
+        print("Error connecting to MetaTrader 5.")
+        return None
+
+    try:
+        # Getting a list of symbols
+        symbols_info = mt5.symbols_get()
+
+        # Get the names of each symbol
+        symbols = [symbol.name for symbol in symbols_info]
+
+        return symbols
+    except Exception as e:
+        print(f"Error when retrieving a list of symbols:{e}")
+        mt5.shutdown()
+        return None
+
+
+def get_historical_data( symbol="GER30", timeframe=mt5.TIMEFRAME_D1, count=30_000):
     """
      Retrieves historical data from MetaTrader 5.
 
@@ -53,6 +79,7 @@ def get_historical_data(timeframe=mt5.TIMEFRAME_D1, symbol="GER30", count=30_000
     try:
         rates = mt5.copy_rates_from_pos(symbol, timeframe, 0, count)
     except Exception as e:
+        print("initialize() failed, error code =",mt5.last_error())
         print(f"Error while receiving data: {e}")
         mt5.shutdown()
         return None
@@ -70,7 +97,7 @@ def get_historical_data(timeframe=mt5.TIMEFRAME_D1, symbol="GER30", count=30_000
         rates_frame['MaxNegativePriceChange'] = rates_frame['Open'] - rates_frame['Low']
 
         rates_frame['PriceChange'] = abs(rates_frame['Close'] - rates_frame['Close'].shift(1))
-
+        rates_frame = rates_frame.dropna()
         # Close the connection to MetaTrader 5
         # mt5.shutdown()
         return rates_frame
@@ -80,7 +107,8 @@ def get_historical_data(timeframe=mt5.TIMEFRAME_D1, symbol="GER30", count=30_000
         return None
 
 
-def automated_trading_from_signals(df, symbol="GER30", lot: float=0.01, deviation=10):
+# Orders f
+def automated_trading_from_signals(df, symbol="GER30", lot = None, deviation=10):
     """
     Executes automated trading operations based on buy and sell signals in the provided DataFrame.
 
@@ -105,14 +133,15 @@ def automated_trading_from_signals(df, symbol="GER30", lot: float=0.01, deviatio
         request = {
             "action": mt5.TRADE_ACTION_DEAL,
             "symbol": symbol,
-            "volume": float(lot),
+            "volume": float(1), 
             "type": trade_type,
             "price": price,
             "deviation": deviation,
             "magic": 234000,
             "comment": f"python script open {signal}",
             "type_time": mt5.ORDER_TIME_DAY,
-            "type_filling": mt5.ORDER_FILLING_FOK,
+            "type_filling": mt5.TRADE_ACTION_DEAL,
+            "request_actions": mt5.TRADE_ACTION_DEAL
         }
         return request
 
@@ -138,22 +167,28 @@ def automated_trading_from_signals(df, symbol="GER30", lot: float=0.01, deviatio
         close_previous_deal(symbol=symbol, signal=signal)
         # Get the current market price based on the signal
         price = mt5.symbol_info_tick(symbol).ask if signal == "buy" else mt5.symbol_info_tick(symbol).bid
+
+        lot = lot if lot else get_min_volume(symbol)
         # Create an order request based on the signal and other parameters
         request = order(signal=signal, symbol=symbol, lot=lot, deviation=deviation)
         # Send the order request to execute the trade
         result = mt5.order_send(request)
 
+        symbol_info = mt5.symbol_info(symbol)
+ 
         # Check the result of the order execution
         if result is not None:
             if result.retcode != mt5.TRADE_RETCODE_DONE:
                 # Print an error message if the order execution fails
-                print("2. order_send failed, retcode={}".format(result.retcode))
+                print(f"2. order_send failed, retcode={result.retcode}, comment={result.comment}")
                 result_dict = result._asdict()
                 for field in result_dict.keys():
                     if field == "request":
                         traderequest_dict = result_dict[field]._asdict()
-                        for tradereq_filed in traderequest_dict:
-                            print("       traderequest: {}={}".format(tradereq_filed, traderequest_dict[tradereq_filed]))
+                        for tradereq_field in traderequest_dict:
+                            print(f"   traderequest: {tradereq_field}={traderequest_dict[tradereq_field]}")
+            else:
+                print("Order executed successfully.")
         else:
             print("Order send failed. Result is None.")
 
@@ -164,6 +199,17 @@ def automated_trading_from_signals(df, symbol="GER30", lot: float=0.01, deviatio
     finally:
         # Shut down the MetaTrader 5 connection
         mt5.shutdown()
+
+
+def get_min_volume(symbol):
+    symbol_info = mt5.symbol_info(symbol)
+    if symbol_info is not None:
+        return symbol_info.volume_min
+    else:
+        print("get_min_volume:")
+        print(f"Information about symbol {symbol} not found.")
+        return None
+
 
 
 

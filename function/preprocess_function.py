@@ -15,11 +15,13 @@ class Preprocessing_stock_data:
         This function initializes the Preprocessing_stock_data class and sets the dataframe, columns, and periods to be used for processing.
         """
         self.df = data.copy()
-        self.open = self.df["open"]
-        self.high = self.df["high"]
-        self.low = self.df["low"]
-        self.close = self.df["close"]
-        self.volume = self.df["volume"]
+        self.open = data["Open"].copy()
+        self.high = data["High"].copy()
+        self.low = data["Low"].copy()
+        self.close = data["Close"].copy()
+        self.volume = data["Volume"].copy()
+        self.date = data["Date"].copy()
+        
         self.periods = periods if periods else [23,115,460]
 
     def add_indicators_pattern_recognition_functions(self):
@@ -32,11 +34,13 @@ class Preprocessing_stock_data:
         This function creates copies of the input data and adds pattern recognition indicators to the dataframe.
         """
         df = pd.DataFrame()
-        df["open"] =  self.df["open"]
-        df["high"] = self.df["high"]
-        df["low"] = self.df["low"]
-        df["close"] = self.df["close"]
-        df["volume"] = self.df["volume"]
+        df["Open"] =  self.open
+        df["High"] = self.high
+        df["Low"] = self.low
+        df["Close"] = self.close
+        df["Volume"] = self.volume
+        df["Date"] = self.date
+        
 
         df["CDL2CROWS"] = tl.CDL2CROWS(self.open, self.high, self.low, self.close)
         df["CDL3BLACKCROWS"] = tl.CDL3BLACKCROWS(self.open, self.high, self.low, self.close)
@@ -99,7 +103,7 @@ class Preprocessing_stock_data:
         df["CDLUNIQUE3RIVER"] = tl.CDLUNIQUE3RIVER(self.open, self.high, self.low, self.close)
         df["CDLUPSIDEGAP2CROWS"] = tl.CDLUPSIDEGAP2CROWS(self.open, self.high, self.low, self.close)
         df["CDLXSIDEGAP3METHODS"] = tl.CDLXSIDEGAP3METHODS(self.open, self.high, self.low, self.close)
-        
+
         return df.fillna(0)
     
     def calculate_overlap_studies(self):
@@ -112,11 +116,12 @@ class Preprocessing_stock_data:
         This function calculates various overlap studies based on the provided periods.
         """
         df = pd.DataFrame()
-        df["open"] =  self.df["open"]
-        df["high"] = self.df["high"]
-        df["low"] = self.df["low"]
-        df["close"] = self.df["close"]
-        df["volume"] = self.df["volume"]
+        df["Open"] =  self.open
+        df["High"] = self.high
+        df["Low"] = self.low
+        df["Close"] = self.close
+        df["Volume"] = self.volume
+        df["Date"] = self.date
         
         for i in self.periods: 
             df["DEMA"+str(i)] = tl.DEMA(self.close, timeperiod=i)
@@ -143,11 +148,12 @@ class Preprocessing_stock_data:
         This function applies various mathematical transformation functions to the 'close' column.
         """
         df = pd.DataFrame()
-        df["open"] =  self.df["open"]
-        df["high"] = self.df["high"]
-        df["low"] = self.df["low"]
-        df["close"] = self.df["close"]
-        df["volume"] = self.df["volume"]
+        df["Open"] =  self.open
+        df["High"] = self.high
+        df["Low"] = self.low
+        df["Close"] = self.close
+        df["Volume"] = self.volume
+        df["Date"] = self.date
         
         df["ACOS"] = tl.ACOS(self.close)
         df["ASIN"] = tl.ASIN(self.close)
@@ -177,11 +183,12 @@ class Preprocessing_stock_data:
         This function applies various momentum indicator functions to the columns such as 'open', 'high', 'low', 'close', and 'real_volume'.
         """
         df = pd.DataFrame()
-        df["open"] =  self.df["open"]
-        df["high"] = self.df["high"]
-        df["low"] = self.df["low"]
-        df["close"] = self.df["close"]
-        df["volume"] = self.df["volume"]
+        df["Open"] =  self.open
+        df["High"] = self.high
+        df["Low"] = self.low
+        df["Close"] = self.close
+        df["Volume"] = self.volume
+        df["Date"] = self.date
         
         for i in self.periods:
             df["ADX" + str(i)] = tl.ADX(self.high, self.low, self.close, timeperiod=i)
@@ -221,11 +228,12 @@ class Preprocessing_stock_data:
         This function applies various statistical functions to the columns such as 'high', 'low', and 'close'.
         """
         df = pd.DataFrame()
-        df["open"] =  self.df["open"]
-        df["high"] = self.df["high"]
-        df["low"] = self.df["low"]
-        df["close"] = self.df["close"]
-        df["volume"] = self.df["volume"]
+        df["Open"] =  self.open
+        df["High"] = self.high
+        df["Low"] = self.low
+        df["Close"] = self.close
+        df["Volume"] = self.volume
+        df["Date"] = self.date
         
         for i in self.periods:
             df["BETA" + str(i)] = tl.BETA(self.high, self.low, timeperiod=i)
@@ -237,10 +245,10 @@ class Preprocessing_stock_data:
             df["STDDEV" + str(i)] = tl.STDDEV(self.close, timeperiod=i, nbdev=1)
             df["TSF" + str(i)] = tl.TSF(self.close, timeperiod=i)
             df["VAR" + str(i)] = tl.VAR(self.close, timeperiod=i, nbdev=1)
-            df["median" + str(i)] = self.df["close"].rolling(window=i, min_periods=1).median()
-            df["mode" + str(i)] = self.df["close"].rolling(window=i, min_periods=1).apply(lambda x: x.mode()[0])
+            df["median" + str(i)] = self.close.rolling(window=i, min_periods=1).median()
+            df["mode" + str(i)] = self.close.rolling(window=i, min_periods=1).apply(lambda x: x.mode()[0])
             df["std" + str(i)] = df["median" + str(i)].rolling(window=i, min_periods=1).std()
-    
+        
         return df.fillna(0)
     
     def math_operator_functions(self):
@@ -254,11 +262,12 @@ class Preprocessing_stock_data:
         """
         
         df = pd.DataFrame()
-        df["open"] =  self.df["open"]
-        df["high"] = self.df["high"]
-        df["low"] = self.df["low"]
-        df["close"] = self.df["close"]
-        df["volume"] = self.df["volume"]
+        df["Open"] =  self.open
+        df["High"] = self.high
+        df["Low"] = self.low
+        df["Close"] = self.close
+        df["Volume"] = self.volume
+        df["Date"] = self.date
         
         for i in self.periods:
             df["MAX"+str(i)] = tl.MAX(self.close, timeperiod=i)
@@ -303,7 +312,7 @@ class Preprocessing_stock_data:
 # 5. Po zakończeniu sesji powtarzam punk
 # 8. Sprawdzam w którym kierunku następnego dnia był większy ruch. W górę to cena max - otwarcie. W dół to cena otwarcie - min. ty 1-4 d
     
-def define_level(data: pd.DataFrame, window_size: list = 14, bias: int = 1) -> pd.DataFrame:
+def define_level(data: pd.DataFrame, window_size: int = 14, bias: int = 1) -> pd.DataFrame:
     """
     Dodaje wartości maksimum i minimum przesuwające się do ramki danych na podstawie określonych parametrów.
 
@@ -570,7 +579,7 @@ def optimize_parameters(data, analysis, calculate, windows_size, bias = [1]):
     best_score = 0
     best_params = None
 
-    for window_size in t(windows_size):
+    for window_size in tqdm(windows_size):
         for b in bias:
             current_data = define_level(data, window_size, b)
             rebound_data = analysis(current_data)

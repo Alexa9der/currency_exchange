@@ -4,23 +4,37 @@ from import_libraries.libraries import  *
 class GradientRFE:
     def __init__(self, data):
         self.data = data
-        self.X = None
-        self.y = None
-        self.best_mse = float('inf')
+        self.X_train = None
+        self.y_train = None
+        self.X_test = None
+        self.y_test = None
+        self.best_rmse = float('inf')
         self.best_parameters = None
 
-    def prepare_data(self, window_size=25, y_column="close"):
-        X, y = [], []
-    
-        for i in range(len(self.data) - window_size):
-            window = self.data.iloc[i:(i + window_size)].drop(y_column, axis=1)
-            X.append(window.values)
-            y.append(self.data.loc[i + window_size, y_column])
-    
-        self.X = np.array(X)
-        self.y = np.array(y)
-    
-        return self.X, self.y
+    def prepare_data(self, window_size=25, y_column="Close_diff", test_size=0.2):
+        # Drop the target column before scaling
+        data_for_scaling = self.data.drop(y_column, axis=1)
+
+        # Split data into training and test sets
+        train_size = int(len(self.data) * (1 - test_size))
+        train_data = data_for_scaling.iloc[:train_size]
+        test_data = data_for_scaling.iloc[train_size:]
+
+        # Initialize and fit MinMaxScaler on the training data
+        scaler = MinMaxScaler(feature_range=(0, 1))
+        train_scaled = scaler.fit_transform(train_data)
+
+        # Transform both training and test sets using the trained scaler
+        train_scaled = scaler.transform(train_data)
+        test_scaled = scaler.transform(test_data)
+
+        X_train, y_train = self.__create_sequences(train_scaled, window_size, y_column)
+        X_test, y_test = self.__create_sequences(test_scaled, window_size, y_column)
+
+        self.X_train, self.y_train = X_train, y_train
+        self.X_test, self.y_test = X_test, y_test
+
+        return self.X_train, self.y_train, self.X_test, self.y_test
 
     
     def model_LSTM(self, shape: list[int, int]):
@@ -37,32 +51,12 @@ class GradientRFE:
         
         return self.model
 
-    
-    def __best_result(self, num_features_to_keep, index_of_min_value, mse_before, mse_after):
-        if mse_after < self.best_mse:
-            self.best_mse = mse_after
-            num_features = [i for i in range(self.X.shape[2]) if i not in index_of_min_value]
-            self.best_parameters = {
-                "best number of features": len(num_features),
-                'best_mse': self.best_mse,
-                'num_features_to_keep': num_features,
-                'index_of_min_value': index_of_min_value,
-            }
-        
             
-    def fit(self, num_features_to_keep=5, X=None, y=None, window_size=25, epochs=10):
+    def fit(self, num_features_to_keep=5, window_size=25, epochs=10):
         
-        if not X and not y:
-            self.prepare_data(window_size)
-        else:
-            self.X = X
-            self.y = y
-
-    
-        X_train, X_test, y_train, y_test = train_test_split(self.X, self.y, test_size=0.2, random_state=42)
+        X_train, y_train, X_test, y_test = self.prepare_data()
         index_of_min_value = []
-        
-        for count in tqdm(range(self.X.shape[2] - num_features_to_keep)):
+        for count in tqdm(range(self.X_train.shape[2] - num_features_to_keep)):           
             
             model = clone_model(self.model_LSTM( shape=[X_train.shape[1], X_train.shape[2]]))
             model.compile(loss='mean_squared_error', optimizer='adam', metrics=['mean_absolute_error'])
@@ -73,6 +67,8 @@ class GradientRFE:
             # Оценка модели на тестовых данных после обучения
             y_pred_before = model.predict(X_test)
             mse_before = mean_squared_error(y_test, y_pred_before)
+            rmse_before = np.sqrt(mse_before)
+            mape_before = np.mean(np.abs((y_test - y_pred_before) / y_test)) * 100
             
             # Получение градиентов относительно входных данных
             with tf.GradientTape() as tape:
@@ -110,16 +106,37 @@ class GradientRFE:
             # Оценка модели на тестовых данных после обучения
             y_pred_after = model.predict(X_test)
             mse_after = mean_squared_error(y_test, y_pred_after)
+            rmse_after = np.sqrt(mse_after)
+            mape_after = np.mean(np.abs((y_test - y_pred_after) / y_test)) * 100
     
-            print(f"Removed feature at index {index_of_min_value_time + count}.")
-            print(f"Test MSE before training: {mse_before}.\nTest MSE after training: {mse_after}")
+            print(f"Test MSE before training: {mse_before}.\nTest RMSE before training: {rmse_before}.")
+            print(f"Test MAPE before training: {mape_before}%")
+            print(f"Test MSE after training: {mse_after}.\nTest RMSE after training: {rmse_after}.")
+            print(f"Test MAPE after training: {mape_after}%")
             
             index_of_min_value.append(index_of_min_value_time + count)
-            self.__best_result(num_features_to_keep, index_of_min_value, mse_before, mse_after)
+            self.__best_result(num_features_to_keep, index_of_min_value, rmse_before, rmse_after)
 
+    def __create_sequences(self, data, window_size, y_column):
+        X, y = [], []
 
+        for i in range(len(data) - window_size):
+            window = data[i:(i + window_size)]
+            X.append(window)
+            y.append(self.data.loc[i + window_size, y_column])
 
+        return np.array(X), np.array(y)
 
+    def __best_result(self, num_features_to_keep, index_of_min_value, rmse_before, rmse_after):
+        if rmse_after < self.best_rmse:
+            self.best_rmse = rmse_after
+            num_features = [i for i in range(self.X_train.shape[2]) if i not in index_of_min_value]
+            self.best_parameters = {
+                "best number of features": len(num_features),
+                'best_rmse': self.best_rmse,
+                'num_features_to_keep': num_features,
+                'index_of_min_value': index_of_min_value,
+            }
 
 
 
