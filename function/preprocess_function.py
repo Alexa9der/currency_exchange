@@ -1,5 +1,7 @@
 from import_libraries.libraries import  *
+from function.NN import * 
 
+# Ta-Lib
 class Preprocessing_stock_data:
     """
     A class to preprocess stock data by applying various technical indicators and mathematical transformations.
@@ -22,7 +24,7 @@ class Preprocessing_stock_data:
         self.volume = data["Volume"].copy()
         self.date = data["Date"].copy()
         
-        self.periods = periods if periods else [23,115,460]
+        self.periods = periods if periods else [23,115,220]
 
     def add_indicators_pattern_recognition_functions(self):
         """
@@ -284,34 +286,41 @@ class Preprocessing_stock_data:
         df["SUB"] = tl.SUB(self.high, self.low)
     
         return df.fillna(0)
-    
-    def all_methods(self):
-        """
-        Invokes all the preprocessing methods.
-    
-        Returns:
-            pd.DataFrame: Dataframe with all the preprocessing methods applied.
-    
-        This function invokes all the preprocessing methods for the stock data.
-        """
+
+    def all_ (self):
+
+        data_indicators_pattern  =  self.add_indicators_pattern_recognition_functions()
+        data_calculate_overlap_studies  =  self.calculate_overlap_studies()
+        data_math_operator_functions  =  self.math_operator_functions()
+        data_math_transform_functions  =  self.math_transform_functions()
+        data_momentum_indicator_functions  =  self.momentum_indicator_functions()
+        data_statistic =  self.statistic_functions()
         
-        all_methods = [getattr(self, method) for method in dir(self) if inspect.ismethod(getattr(self, method))]
-        for method in all_methods:
-            if method.__name__ != 'all_methods' and "__" not in  method.__name__ :
-                method()
-                
-        return self.df
+        dataframes = {
+            'indicators_pattern': data_indicators_pattern,
+            'calculate_overlap_studies': data_calculate_overlap_studies,
+            'math_operator_functions': data_math_operator_functions,
+            'math_transform_functions': data_math_transform_functions,
+            'momentum_indicator_functions': data_momentum_indicator_functions,
+            'statistic': data_statistic
+        }
+
+        merged_data = None  # Создаем пустой датафрейм для объединенных данных
+
+        for key, df in dataframes.items():
+            if merged_data is None:
+                merged_data = df.copy()  # Копируем первый датафрейм, если merged_data пустой
+            else:
+                # Объединяем по общим колонкам
+                merged_data = pd.merge(merged_data, df, on=['Date', 'Close', 'High', 'Low', 
+                                                            'Open',"Volume"], how='inner')
+
+        return merged_data
     
-# Etap I. Określanie kierunku.
-# 1. Wyznaczam cenę max i min dla różnych przedziałów od 1 do 60 dni wstecz.
-# 2. Określam czy cena w bieżącym dniu przekroczyła wyznaczony poziom min lub max.
-# 3. Określam czy cena w bieżącym dniu powróciła do określonego przedziału między min a max.
-# 4. Wyznaczam bieżący kieru5.ek:
-# - po przekroczeniu i powrocie do poziomu min ("wsparcie") kierunek to BUY;
-# - po przekroczeniu i powrocie do poziomu max ("opór") kierunek to SELL;
-# 5. Po zakończeniu sesji powtarzam punk
-# 8. Sprawdzam w którym kierunku następnego dnia był większy ruch. W górę to cena max - otwarcie. W dół to cena otwarcie - min. ty 1-4 d
+
+
     
+# manual strategy    
 def define_level(data: pd.DataFrame, window_size: int = 14, bias: int = 1) -> pd.DataFrame:
     """
     Dodaje wartości maksimum i minimum przesuwające się do ramki danych na podstawie określonych parametrów.
@@ -345,46 +354,7 @@ def define_level(data: pd.DataFrame, window_size: int = 14, bias: int = 1) -> pd
     
     return data
 
-def breakdown_analysis(data):
-    """
-    Przeprowadza analizę przełamania cen względem poziomów oporu i wsparcia.
-
-    Funkcja określa, czy występuje przełamanie ceny względem poziomów oporu i wsparcia na podstawie danych wejściowych.
-    Ustawia sygnały "buy" i "sell" w kolumnie "Signal" na podstawie wykrytych przełamań.
-
-    Argumenty:
-    data (pd.DataFrame): Dane wejściowe zawierające kolumny "RollingMax" i "RollingMin" oraz ceny otwarcia, zamknięcia, najwyższe i najniższe.
-
-    Zwraca:
-    pd.DataFrame: Dane wejściowe z dodanymi sygnałami "buy" i "sell" oraz kolumną "Signal" określającą rodzaj sygnału.
-
-    Przykład użycia:
-    >>> data = pd.DataFrame({'RollingMax': [50, 55, 60, 58, 52], 'RollingMin': [45, 40, 35, 38, 43], 'High': [52, 55, 58, 56, 51], 'Low': [48, 42, 36, 39, 45], 'Close': [50, 45, 40, 42, 48]})
-    >>> analyzed_data = breakdown_analysis(data)
-    >>> print(analyzed_data)
-    """
-    data['Buy'] = (
-        (data["RollingMax"] < data["High"]) &  # maslo masliane
-        (data["RollingMax"] < data["Close"])
-    ).map({True: 1, False: 0})
     
-    data['SELL'] = (
-        (data["RollingMin"] > data["Low"]) &  # maslo masliane
-        (data["RollingMin"] > data["Close"])
-    ).map({True: 2, False: 0})
-    
-    data["Signal"] = data['Buy'] + data['SELL']
-    data.loc[data["Signal"] == 1, "Signal"] = "buy"
-    data.loc[data["Signal"] == 2, "Signal"] = "sell"
-
-    data["Signal"] = data["Signal"].replace(0, np.nan).ffill()
-    data = data.drop(["SELL", "Buy"], axis=1)
-
-    data.dropna(axis=0, inplace=True)
-    data.reset_index(drop=True, inplace=True)
-
-    return data
-
 def rebound_analysis(data):
     """
     Przeprowadza analizę odbić cen od poziomów wsparcia i oporu w ramce danych.
@@ -399,12 +369,7 @@ def rebound_analysis(data):
     data['SELL'] = (
         (data["RollingMax"] < data["High"]) &
         (data["RollingMax"] > data["Close"])
-    ).map({True: 1, False: 0})
-    
-    # resistance_indices = data[data['SELL'] == True].index + 1
-    # data.loc[resistance_indices, 'Next_Resistance_Candle_Type'] = (
-    #     data.loc[resistance_indices, 'Open'] - data.loc[resistance_indices, 'Low']
-    # )
+    ).map({True: 1, False: 0}) 
 
     # Analiza odbić cen od poziomów wsparcia
     data['Buy'] = (
@@ -412,18 +377,15 @@ def rebound_analysis(data):
         (data["RollingMin"] < data["Close"])
     ).map({True: 2, False: 0})
     
-    # support_indices = data[data['Buy'] == True].index + 1
-    # data.loc[support_indices, 'Next_Support_Candle_Type'] = (
-    #     data.loc[support_indices, 'High'] - data.loc[support_indices, 'Open']
-    # )
 
     # Tworzenie sygnału na podstawie wykrytych odbić
     data["Signal"] = data['Buy'] + data['SELL']
-    data.loc[data["Signal"] == 1, "Signal"] = "sell"
-    data.loc[data["Signal"] == 2, "Signal"] = "buy"
+    data["Signal"] = data["Signal"].astype(str)
+    data.loc[data["Signal"] == '1', "Signal"] = "sell"
+    data.loc[data["Signal"] == '2', "Signal"] = "buy"
 
     # Uzupełnianie pustych wartości sygnału zgodnie z poprzednimi wartościami
-    data["Signal"] = data["Signal"].replace(0, np.nan).ffill()
+    data["Signal"] = data["Signal"].replace("0", np.nan).ffill()
     data = data.drop(["SELL","Buy"], axis=1)
 
     # Usunięcie wierszy zawierających wartości NaN
@@ -434,73 +396,9 @@ def rebound_analysis(data):
 
     return data
 
+    
 # calc
-def calculate_percentage(data, return_count=False):
-    """
-    Calculates the score based on the provided data, which includes buy and sell signals.
-
-    Args:
-    data (pd.DataFrame): Input data containing columns such as 'Signal', 'PriceChange', 'Close', and 'Open'.
-    return_count (bool): Indicates whether to return the percentage of buy and sell price changes separately.
-
-    Returns:
-    float or tuple: The calculated percentage score. If return_count is True, it returns a tuple containing the percentage of buy and sell price changes.
-
-    Example:
-    >>> import pandas as pd
-    >>> data = pd.DataFrame({'Signal': ['sell', 'buy', 'buy', 'sell'], 'PriceChange': [0.1, 0.2, -0.1, -0.2], 'Close': [10, 11, 12, 13], 'Open': [9, 10, 11, 12]})
-    >>> calculate_score(data)
-    37.5
-    """
-
-    df = data.copy()
-
-    sell_count = 0
-    buy_count = 0
-    sell_price_changes = np.array([])
-    buy_price_changes = np.array([])
-    oll_sell_price_changes = np.array([])
-    oll_buy_price_changes = np.array([])
-
-    for i in range(len(df)):
-        if df['Signal'].iloc[i] == 'sell':
-            oll_sell_price_changes = np.append(oll_sell_price_changes, df["PriceChange"].iloc[i])
-            if df['Close'].iloc[i] < df['Open'].iloc[i]:
-                sell_price_changes = np.append(sell_price_changes, df["PriceChange"].iloc[i])
-                sell_count += 1
-                if buy_count > 0:
-                    buy_price_changes = np.append(buy_price_changes, df["PriceChange"].iloc[i])
-                    oll_buy_price_changes = np.append(oll_buy_price_changes, df["PriceChange"].iloc[i])
-                    buy_count = 0
-        elif df['Signal'].iloc[i] == 'buy':
-            oll_buy_price_changes = np.append(oll_buy_price_changes, df["PriceChange"].iloc[i])
-            if df['Close'].iloc[i] > df['Open'].iloc[i]:
-                buy_price_changes = np.append(buy_price_changes, df["PriceChange"].iloc[i])
-                buy_count += 1
-                if sell_count > 0:
-                    sell_price_changes = np.append(sell_price_changes, df["PriceChange"].iloc[i])
-                    oll_sell_price_changes = np.append(oll_sell_price_changes, df["PriceChange"].iloc[i])
-                    sell_count = 0
-
-    if sell_count > 0:
-        sell_price_changes = np.append(sell_price_changes, df["PriceChange"].iloc[i])
-        oll_sell_price_changes = np.append(oll_sell_price_changes, df["PriceChange"].iloc[i])
-        
-    if buy_count > 0:
-        buy_price_changes = np.append(buy_price_changes, df["PriceChange"].iloc[i])
-        oll_buy_price_changes = np.append(oll_buy_price_changes, df["PriceChange"].iloc[i])
-
-    percentage_buy = (buy_price_changes.sum() / oll_buy_price_changes.sum()) * 100
-    percentage_sell = (sell_price_changes.sum() / oll_sell_price_changes.sum()) * 100
-    percentage = (percentage_sell + percentage_buy) / 2
-
-    if return_count:
-        return percentage_buy, percentage_sell
-
-    return percentage
-
-
-def calculate_accumulated_price_changes(df, princ=False):    
+def calculate_accumulated_price_changes(data, princ=False):    
     """
     Calculates the accumulated price changes based on buy and sell signals in the given data.
 
@@ -514,7 +412,7 @@ def calculate_accumulated_price_changes(df, princ=False):
     This function calculates the accumulated price changes based on buy and sell signals in the provided DataFrame.
     It returns the total accumulated changes. If princ is True, the function returns separate changes for buy and sell.
     """
-    
+    df = data.copy()
     signal_changes = df['Signal'].ne(df['Signal'].shift())
     
     indices = df.index[signal_changes].tolist()
@@ -553,13 +451,15 @@ def calculate_accumulated_price_changes(df, princ=False):
     all_buy = df.loc[df["Signal"] == "buy", "AccumulatedPriceChange"].sum()
 
     if princ:
-        return all_buy, all_sell
-    else:
         return all_buy + all_sell
+    else:
+        return df
 
-
+    
 # optimizer
-def optimize_parameters(data, analysis, calculate, windows_size, bias = [1]):
+def optimize_parameters(data, analysis, calculate, window_size_range, 
+                        bias_range , return_param = False):
+    # или валидация (учим на первых трех а смотрим на 4 ) и так до конца 
     """
     Optimizes the parameters of a given analysis by testing different window sizes and bias values.
 
@@ -571,27 +471,114 @@ def optimize_parameters(data, analysis, calculate, windows_size, bias = [1]):
         bias (list, optional): List of bias values to be tested. Defaults to [1].
 
     Returns:
-        dict: The best parameters found during optimization.
+            pd.DataFrame(): The best data found during optimization.
 
     This function iterates through the provided window sizes and bias values, applies the analysis and calculates 
     the score for each combination. It then returns the parameters that yield the best score.
     """
-    best_score = 0
+    best_score = float('-inf')
     best_params = None
-
-    for window_size in tqdm(windows_size):
-        for b in bias:
-            current_data = define_level(data, window_size, b)
+    return_data = None
+    for window_size in tqdm(range(*window_size_range)):
+        for bias in range(*bias_range):
+            current_data = define_level(data, window_size, bias)
             rebound_data = analysis(current_data)
-            current_score = calculate(rebound_data)  
+            current_score = calculate(rebound_data, princ=True)
 
             if current_score > best_score:
                 best_score = current_score
-                best_params = {'window_size': window_size, 'bias': b}
+                best_params = {'window_size': window_size, 'bias': bias}
+                return_data = rebound_data
+                
+    print(best_params)
+    
+    if return_param:
+        return best_params
+        
+    return return_data
 
-    return best_params
+    
+def cross_validate_on_periods(data, analysis, calculate, window_size_range, 
+                              bias_range, n_splits=5, return_param = False):
+    
+    """
+    Cross-validates the analysis on different periods of the given data using TimeSeriesSplit.
 
+    Args:
+        data (pd.DataFrame): The input DataFrame with a time series.
+        analysis (function): The analysis function to be optimized.
+        calculate (function): The function to calculate the score.
+        window_size_range (tuple): Range of window sizes to be tested.
+        bias_range (tuple): Range of bias values to be tested.
+        n_splits (int): Number of splits for TimeSeriesSplit. Defaults to 5.
+        return_param (bool): If True, returns the best parameters. If False, returns the best data.
 
+    Returns:
+        pd.DataFrame or dict: The best data found during optimization or the best parameters.
+
+    This function iterates through the provided window sizes and bias values, applies the analysis, 
+    and calculates the score for each combination. It then returns the parameters that yield the best score
+    or the best data, based on the value of 'return_param'.
+
+    Note: The function uses tqdm to display a progress bar during the optimization process.
+    """
+
+    # Calculate the step size for splitting the data into time periods
+    step = len(data) // n_splits
+    start = 0
+    best_score = float('-inf')
+    best_params = None
+
+    # Iterate through the range of window sizes using tqdm for progress visualization
+    for window_size in tqdm(range(*window_size_range)):
+        for bias in range(*bias_range):
+            score = []
+
+            # Reset start and step for each combination of window size and bias
+            # start = 0
+            # step = len(data) // n_splits
+
+            # Iterate through each time period for cross-validation
+            for _ in range(n_splits):
+                # Select the current time period for training
+                train_data = data.iloc[start : start + step]
+                # print(start, start + step)
+                
+                # Transform the training data based on the current window size and bias
+                current_train_data = define_level(train_data, window_size, bias)
+                
+                # Apply the analysis function to the transformed training data
+                rebound_train_data = analysis(current_train_data)
+                
+                # Calculate the score using the provided calculate function
+                current_score = calculate(rebound_train_data, princ=True) # 10 test 8
+                
+                # Append the current score to the list
+                score.append(current_score)
+
+                # Update start and step for the next time period
+                start += step
+
+            # Calculate the average score for the current combination of window size and bias
+            average_score = sum(score) / len(score)
+
+            # Update the best score and parameters if the current combination is better
+            if average_score > best_score:
+                best_score = average_score
+                best_params = {'window_size': window_size, 'bias': bias}
+                # Calculate the best data using the provided analysis and define_level functions
+                best_data = calculate(analysis(define_level(data, window_size, bias)))
+
+    # Print the best parameters and return the best data
+    print(best_params)
+    
+    if return_param:
+        return best_params
+    else :
+        return best_data
+
+    
+# Genetic algorithm strategy
 class GeneticAlgorithm:
     """
     A class representing a Genetic Algorithm for parameter optimization in trading strategies.
@@ -764,8 +751,125 @@ class GeneticAlgorithm:
         """
         return self.best_individual
 
+    
+# network strategy
+# preparing data for a neural network
+
+    
+def cleaned_data(df: pd.DataFrame, variance_threshold: float = 0.1) ->  pd.DataFrame :
+    """
+    Perform data cleaning on a collection of DataFrames.
+
+    Parameters:
+    - data (dict): A dictionary where keys are names (strings) and values are DataFrames to be cleaned.
+
+    Returns:
+    - dict: A dictionary containing cleaned DataFrames, where keys are names and values are corresponding cleaned DataFrames.
+
+    The function performs the following steps for each DataFrame in the input dictionary:
+    1. Separates datetime columns and non-datetime columns.
+    2. Handles non-datetime columns by removing rows with missing values and keeping columns with more than one unique value.
+    3. Drops duplicate columns in the cleaned DataFrame.
+    4. Adds a 'Date' column to the cleaned DataFrame containing datetime values.
+
+    Example:
+    ```
+    data_dict = {'df1': pd.DataFrame(...), 'df2': pd.DataFrame(...)}
+    cleaned_data_dict = cleaned_data(data_dict)
+    ```
+
+    Note:
+    - The function uses the tqdm library to display a progress bar during the cleaning process.
+    """
+
+    # Separate datetime columns
+    datetime_columns = df.select_dtypes(include=['datetime64']).columns
+    
+    other_columns = df.columns.difference(datetime_columns)
+
+    # Handle non-datetime columns
+    df_cleaned = df[other_columns].dropna()
+    df_cleaned = df_cleaned.loc[:, df_cleaned.nunique() > 1]
+
+    # Drop duplicate columns
+    duplicate_columns = df_cleaned.columns[df_cleaned.T.duplicated()].tolist()
+    df_cleaned = df_cleaned.drop(columns=duplicate_columns, axis=1)
+
+    # Calculate variance and remove columns with low variance
+    variances = df_cleaned.var()
+    df_cleaned = df_cleaned.loc[:, variances >= variance_threshold]
+
+    df_cleaned["Date"] = df[datetime_columns]
+    
+    return df_cleaned
 
 
+    
+def create_lagged_features_and_target(df: {pd.DataFrame}) -> {str: pd.DataFrame}:
+    """
+    Creates lagged features and a target variable for each DataFrame in the provided dictionary.
+
+    Parameters:
+    - data (dict): A dictionary where keys are names and values are DataFrames.
+
+    Returns:
+    - dict: A dictionary with DataFrames containing lagged features and a target variable.
+
+    Example:
+    ```
+    lagged_data_dict = create_lagged_features_and_target({'df1': df1, 'df2': df2})
+    ```
+
+    This function iterates through the provided dictionary of DataFrames and creates lagged features
+    and a target variable for each DataFrame.
+
+    The target variable ('Close_diff') is calculated as the difference between the current and next 'Close' values.
+
+    The resulting DataFrames are cleaned by removing rows with missing values.
+
+    The function returns a dictionary with DataFrames containing lagged features and a target variable.
+    """
+
+
+    # Creating target
+    df['Close_diff'] = df['Close'] - df['Close'].shift(-1)
+
+    # Drop rows with missing values
+    df = df.dropna()
+
+
+    return df
+
+    
+# parameter optimization
+def get_best_data_frame_parameters_for_LSTM(data: {str, pd.DataFrame}) ->  {str, pd.DataFrame}:
+    """
+    Process a dictionary of DataFrames using GradientRFE and return the best parameters for each DataFrame.
+
+    Parameters:
+    - data (Dict[str, pd.DataFrame]): A dictionary where keys are DataFrame names and values are DataFrames.
+
+    Returns:
+    - best_parameters (Dict[str, dict]): A dictionary where keys are DataFrame names and values are
+      the best parameters obtained from GradientRFE for each DataFrame.
+    """
+
+    best_parameters = {}  # Initialize an empty dictionary to store the best parameters
+
+
+    # Remove columns with a single unique value, as they do not contribute to the model
+    df = df.drop("Date", axis=1)
+
+    # Create an instance of GradientRFE for the current DataFrame
+    grfe = GradientRFE(df)
+    
+    # Fit GradientRFE to the data and obtain the best parameters
+    grfe.fit() 
+    
+    # Store the best parameters in the dictionary with the DataFrame name as the key
+    best_parameters[name] = grfe.best_parameters
+
+    return best_parameters
 
 
 

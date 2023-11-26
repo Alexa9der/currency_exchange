@@ -92,6 +92,7 @@ def get_historical_data( symbol="GER30", timeframe=mt5.TIMEFRAME_D1, count=30_00
         rates_frame = rates_frame.rename(columns=lambda x: x.capitalize())
         rates_frame = rates_frame.rename(columns={"Time": "Date"})
 
+        
         rates_frame['Volume'] = rates_frame['High'] - rates_frame['Low']
         rates_frame['MaxPositivePriceChange'] = rates_frame['High'] - rates_frame['Open']
         rates_frame['MaxNegativePriceChange'] = rates_frame['Open'] - rates_frame['Low']
