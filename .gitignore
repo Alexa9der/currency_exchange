@@ -218,6 +218,6 @@ pip-selfcheck.json
 *.json
 *.pkl
 *.h5
-
+*.hdf5
 .config.json
 
