@@ -217,6 +217,7 @@ pip-selfcheck.json
 *.html
 *.json
 *.pkl
+*.h5
 
 .config.json
 
