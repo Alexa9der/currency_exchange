@@ -26,6 +26,12 @@ from deap import base, creator, tools, algorithms
 import tensorflow as tf
 from tensorflow.keras.models import Model, clone_model
 from tensorflow.keras.layers import Input, LSTM, Flatten, Dense, Attention
+from keras_tuner.tuners import Hyperband
+from keras_tuner.engine.hyperparameters import HyperParameters
+from tensorflow.keras import layers
+from tensorflow.keras.optimizers import Adam
+from tensorflow.keras.callbacks import ReduceLROnPlateau, ModelCheckpoint
+from tensorflow.keras.models import load_model
 
 
 from sklearn.preprocessing import MinMaxScaler

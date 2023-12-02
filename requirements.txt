@@ -1,2 +1,6 @@
+keras-tuner --upgrade
+statsmodels
+# scikit-optimize
+
 
 

@@ -1,5 +1,71 @@
 from import_libraries.libraries import  *
 
+def prepare_data(data, window_size=25, y_column="Close_diff", test_size=0.2):
+    """
+    Prepares the data for training a time series prediction model using a specified window size.
+
+    Parameters:
+    - data (pd.DataFrame): The input time series data.
+    - window_size (int): The size of the sliding window used to create sequences. Default is 25.
+    - y_column (str): The column representing the target variable to predict. Default is "Close_diff".
+    - test_size (float): The proportion of data to be used as the test set. Default is 0.2.
+
+    Returns:
+    - X_train (numpy.ndarray): Input sequences for training.
+    - y_train (numpy.ndarray): Target values for training.
+    - X_test (numpy.ndarray): Input sequences for testing.
+    - y_test (numpy.ndarray): Target values for testing.
+    """
+
+    def create_sequences(data, window_size, y_column, columns):
+        """
+        Creates input sequences and corresponding target values from the given data.
+
+        Parameters:
+        - data (numpy.ndarray): The input data.
+        - window_size (int): The size of the sliding window.
+        - y_column (str): The column representing the target variable.
+        - columns (pd.Index): The columns of the input data.
+
+        Returns:
+        - X (numpy.ndarray): Input sequences.
+        - y (numpy.ndarray): Target values.
+        """
+        X, y = [], []
+        for i in range(len(data) - window_size):
+            window = data[i:(i + window_size), :]
+            target = data[i + window_size, columns.get_loc(y_column)]  
+            
+            X.append(window)  
+            y.append(target)
+        return np.array(X), np.array(y)
+
+    data = data.copy()
+    datetime_columns = data.select_dtypes(include=['datetime64']).columns
+    if not datetime_columns.empty:
+        data = data.drop(columns=datetime_columns)
+
+    columns = data.columns  
+
+    # Split data into training and test sets
+    train_size = int(len(data) * (1 - test_size))
+    train_data = data[:train_size]
+    test_data = data[train_size:]
+
+    # Initialize and fit MinMaxScaler on the training data
+    scaler = MinMaxScaler(feature_range=(0, 1)).fit(train_data)
+
+    # Transform both training and test sets using the trained scaler
+    train_scaled = scaler.transform(train_data)
+    test_scaled = scaler.transform(test_data)
+
+    # Create sequences for training and testing
+    X_train, y_train = create_sequences(train_scaled, window_size, y_column, columns)
+    X_test, y_test = create_sequences(test_scaled, window_size, y_column, columns)
+
+    return X_train, y_train, X_test, y_test
+
+    
 # feature optimizer
 class GradientRFE:
     def __init__(self, data):
@@ -140,48 +206,88 @@ class GradientRFE:
 
 
 def build_model(hp):
-    input_layer = layers.Input(shape=())  # Обратите внимание на изменение формы входных данных
+    """
+    Builds a convolutional and bidirectional LSTM model for hyperparameter tuning using Keras Tuner.
 
-    # Сверточный слой 1
-    conv1 = layers.Conv2D(filters=hp.Int('conv1_filters', min_value=8, max_value=32, step=8),
+    Parameters:
+    - hp (kerastuner.HyperParameters): Hyperparameters for model configuration.
+
+    Returns:
+    - model (keras.models.Model): Compiled Keras model.
+    """
+
+    input_layer = layers.Input(shape=())  # Note the change in the input data shape
+
+    # Convolutional layer 1
+    conv1 = layers.Conv1D(filters=hp.Int('conv1_filters', min_value=8, max_value=32, step=8),
                           kernel_size=hp.Int('conv1_kernel', min_value=2, max_value=8, step=2),
                           padding='same')(input_layer)
-    pool1 = layers.MaxPooling2D(pool_size=(3, 1))(conv1)
+    pool1 = layers.MaxPooling1D(pool_size=3)(conv1)
     activation1 = layers.LeakyReLU()(pool1)
 
-    # Сверточный слой 2
-    conv2 = layers.Conv2D(filters=hp.Int('conv2_filters', min_value=16, max_value=64, step=16),
+    # Convolutional layer 2
+    conv2 = layers.Conv1D(filters=hp.Int('conv2_filters', min_value=16, max_value=64, step=16),
                           kernel_size=hp.Int('conv2_kernel', min_value=2, max_value=8, step=2),
                           padding='same')(activation1)
     
-    pool2 = layers.MaxPooling2D(pool_size=(3, 1))(conv2)
+    pool2 = layers.MaxPooling1D(pool_size=3)(conv2)
     activation2 = layers.LeakyReLU()(pool2)
 
-    # Bidirectional LSTM слой
+    # Bidirectional LSTM layer
     lstm_layer = layers.Bidirectional(layers.LSTM(units=hp.Int('lstm_units', min_value=32, max_value=128, step=32),
                                                    return_sequences=True))(activation2)
 
-    # Сглаживание перед полносвязным слоем
+    # Flatten before the dense layer
     flatten_layer = layers.Flatten()(lstm_layer)
 
-    # Полносвязный слой 1
+    # Dense layer 1
     dense1 = layers.Dense(units=hp.Int('dense1_units', min_value=16, max_value=64, step=16))(flatten_layer)
     activation3 = layers.LeakyReLU()(dense1)
 
-    # Полносвязный слой 2
+    # Dense layer 2
     dense2 = layers.Dense(1)(activation3)
     output_layer = layers.Activation('linear')(dense2)
 
-    # Создание модели
+    # Create the model
     model = Model(inputs=input_layer, outputs=output_layer)
 
-    # Компиляция модели
+    # Compile the model
     optimizer = Adam(learning_rate=hp.Choice('learning_rate', values=[1e-2, 1e-3, 1e-4]))
     model.compile(optimizer=optimizer, loss='mean_squared_error')
 
     return model
 
 
+if __name__ == "__main__":
+    
+    # Определение объекта KerasTuner
+    tuner = Hyperband(
+        build_model,
+        objective='val_loss',
+        max_epochs=30,
+        factor=3,
+        directory='keras_tuner_logs',
+        project_name='stock_price_prediction')
+    
+    # Коллбэки
+    reduce_lr = ReduceLROnPlateau(monitor='val_loss', factor=0.9, patience=25, min_lr=0.000001, verbose=1)
+    checkpointer = ModelCheckpoint(filepath="tuner_checkpoint.hdf5", verbose=1, save_best_only=True)
+    
+    # Обучение тюнера
+    tuner.search(x=X_train, y=y_train,
+                 epochs=11,
+                 validation_data=(X_test, y_test),
+                 callbacks=[reduce_lr, checkpointer])
+    
+    # Получение лучших гиперпараметров
+    best_hps = tuner.get_best_hyperparameters(num_trials=1)[0]
+    
+    # Печать лучших гиперпараметров
+    print(f"Best hyperparameters: {best_hps}")
+    
+    # Использование лучших гиперпараметров для построения окончательной модели
+    final_model = tuner.hypermodel.build(best_hps)
+    final_model.summary()
 
 
 
