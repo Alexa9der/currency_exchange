@@ -139,8 +139,47 @@ class GradientRFE:
             }
 
 
+def build_model(hp):
+    input_layer = layers.Input(shape=())  # Обратите внимание на изменение формы входных данных
 
+    # Сверточный слой 1
+    conv1 = layers.Conv2D(filters=hp.Int('conv1_filters', min_value=8, max_value=32, step=8),
+                          kernel_size=hp.Int('conv1_kernel', min_value=2, max_value=8, step=2),
+                          padding='same')(input_layer)
+    pool1 = layers.MaxPooling2D(pool_size=(3, 1))(conv1)
+    activation1 = layers.LeakyReLU()(pool1)
 
+    # Сверточный слой 2
+    conv2 = layers.Conv2D(filters=hp.Int('conv2_filters', min_value=16, max_value=64, step=16),
+                          kernel_size=hp.Int('conv2_kernel', min_value=2, max_value=8, step=2),
+                          padding='same')(activation1)
+    
+    pool2 = layers.MaxPooling2D(pool_size=(3, 1))(conv2)
+    activation2 = layers.LeakyReLU()(pool2)
+
+    # Bidirectional LSTM слой
+    lstm_layer = layers.Bidirectional(layers.LSTM(units=hp.Int('lstm_units', min_value=32, max_value=128, step=32),
+                                                   return_sequences=True))(activation2)
+
+    # Сглаживание перед полносвязным слоем
+    flatten_layer = layers.Flatten()(lstm_layer)
+
+    # Полносвязный слой 1
+    dense1 = layers.Dense(units=hp.Int('dense1_units', min_value=16, max_value=64, step=16))(flatten_layer)
+    activation3 = layers.LeakyReLU()(dense1)
+
+    # Полносвязный слой 2
+    dense2 = layers.Dense(1)(activation3)
+    output_layer = layers.Activation('linear')(dense2)
+
+    # Создание модели
+    model = Model(inputs=input_layer, outputs=output_layer)
+
+    # Компиляция модели
+    optimizer = Adam(learning_rate=hp.Choice('learning_rate', values=[1e-2, 1e-3, 1e-4]))
+    model.compile(optimizer=optimizer, loss='mean_squared_error')
+
+    return model
 
 
 

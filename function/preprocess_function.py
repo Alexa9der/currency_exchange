@@ -1,6 +1,6 @@
 from import_libraries.libraries import  *
 from function.NN import * 
-
+from function.function_for_MT5 import *
 # Ta-Lib
 class Preprocessing_stock_data:
     """
@@ -398,7 +398,7 @@ def rebound_analysis(data):
 
     
 # calc
-def calculate_accumulated_price_changes(data, princ=False):    
+def calculate_accumulated_price_changes(data, return_data=False, symbol = None):    
     """
     Calculates the accumulated price changes based on buy and sell signals in the given data.
 
@@ -450,15 +450,102 @@ def calculate_accumulated_price_changes(data, princ=False):
     all_sell = df.loc[df["Signal"] == "sell", "AccumulatedPriceChange"].sum()
     all_buy = df.loc[df["Signal"] == "buy", "AccumulatedPriceChange"].sum()
 
-    if princ:
-        return all_buy + all_sell
-    else:
+    if return_data:
         return df
 
+    return all_buy + all_sell
+
+
+def calculate_min_capital(data: pd.DataFrame, symbol: str, return_data: bool = False) -> float:
+    """
+    Calculates the minimum capital required for a trading strategy based on the provided data.
+
+    Parameters:
+    - data (pd.DataFrame): DataFrame with backtesting data, containing 'Signal' and 'Close' columns.
+    - symbol (str): Symbol or instrument used in the trading strategy.
+    - return_data (bool, optional): Flag to return the modified data. Default is False.
+
+    Returns:
+    - float: Minimum capital achieved during the backtest.
+
+    """
+    # Getting information about the symbol
+    info = symbol_info(symbol)
+
+    # Initial values
+    CAPITAL = 1_000.0  # Initial capital size
+    balance = [CAPITAL]
+    capital_now = CAPITAL
+    signal_now = data["Signal"][0]
+    price_now = data['Close'][0]
+    position_volume = info.volume_min
     
+    # Parameters for calculating the capital portion and commission
+    margin_requirement_percentage = 0.05
+    PORTION = (position_volume * ((info.ask + info.bid) / 2) * margin_requirement_percentage) / 100
+    COMMISSION = 0.0005
+
+    # Calculation of swaps for short and long positions
+    swap_short = (position_volume * info.bid * info.swap_short) / 100
+    swap_long = (position_volume * info.ask * info.swap_long) / 100
+
+    # Iteration through backtesting data
+    for i in range(1, len(data)): 
+        if signal_now == data['Signal'][i]: 
+            # Handling swaps
+            if signal_now == "sell": 
+                swap = swap_short
+            else: 
+                swap = swap_long
+            capital_now -= swap
+            balance.append(capital_now)
+        else:
+            # Calculation of price change
+            change_now = (data['Close'][i] - price_now) / price_now
+            
+            # Handling buy operations
+            if signal_now == "buy": 
+                total = capital_now * PORTION 
+                capital_now -= total
+                open_commission = total * COMMISSION 
+                total *= (1 + change_now)
+                close_commission = total * COMMISSION 
+                total -= open_commission + close_commission 
+                capital_now += total
+                balance.append(capital_now)
+                
+                # Updating the current signal and price
+                signal_now = data['Signal'][i] 
+                price_now = data['Close'][i]
+            else: 
+                # Handling sell operations
+                total = capital_now * PORTION 
+                capital_now -= total 
+                open_commission = total * COMMISSION 
+                total *= (1 - change_now) 
+                close_commission = total * COMMISSION 
+                total -= open_commission + close_commission 
+                capital_now += total 
+                balance.append(capital_now)
+
+                # Updating the current signal and price
+                signal_now = data['Signal'][i] 
+                price_now = data['Close'][i]
+    
+    # Adding the 'Capital' column to the data
+    data['Capital'] = pd.DataFrame(balance)
+
+    # Returning the modified data if the return_data flag is set
+    if return_data:
+        return data
+        
+    # Returning the minimum capital value
+    return data['Capital'].min()
+
+
 # optimizer
 def optimize_parameters(data, analysis, calculate, window_size_range, 
-                        bias_range , return_param = False):
+                        bias_range , return_param = False, symbol = None ):
     # или валидация (учим на первых трех а смотрим на 4 ) и так до конца 
     """
     Optimizes the parameters of a given analysis by testing different window sizes and bias values.
@@ -483,7 +570,7 @@ def optimize_parameters(data, analysis, calculate, window_size_range,
         for bias in range(*bias_range):
             current_data = define_level(data, window_size, bias)
             rebound_data = analysis(current_data)
-            current_score = calculate(rebound_data, princ=True)
+            current_score = calculate(rebound_data, symbol= symbol )
 
             if current_score > best_score:
                 best_score = current_score
@@ -499,7 +586,7 @@ def optimize_parameters(data, analysis, calculate, window_size_range,
 
     
 def cross_validate_on_periods(data, analysis, calculate, window_size_range, 
-                              bias_range, n_splits=5, return_param = False):
+                              bias_range, n_splits=5, return_param = False, symbol = None):
     
     """
     Cross-validates the analysis on different periods of the given data using TimeSeriesSplit.
@@ -551,7 +638,7 @@ def cross_validate_on_periods(data, analysis, calculate, window_size_range,
                 rebound_train_data = analysis(current_train_data)
                 
                 # Calculate the score using the provided calculate function
-                current_score = calculate(rebound_train_data, princ=True) # 10 test 8
+                current_score = calculate(rebound_train_data, princ=True, symbol = symbol) # 10 test 8
                 
                 # Append the current score to the list
                 score.append(current_score)
@@ -577,6 +664,7 @@ def cross_validate_on_periods(data, analysis, calculate, window_size_range,
     else :
         return best_data
 
+        
     
 # Genetic algorithm strategy
 class GeneticAlgorithm:

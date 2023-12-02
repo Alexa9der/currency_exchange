@@ -212,7 +212,14 @@ def get_min_volume(symbol):
         return None
 
 
-
+def symbol_info(symbol):
+    symbol_info = mt5.symbol_info(symbol)
+    if symbol_info is not None:
+        return symbol_info
+    else:
+        print("symbol_info:")
+        print(f"Information about symbol {symbol} not found.")
+        return None
 
 
 
